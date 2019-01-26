@@ -24,8 +24,10 @@ streams =  ('LEFT KNEE CENTERLINE',
             'LEFT KNEE HEIGHT ON IP LOWER')
 knee_cols = ['LEFT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
 ip_cols = ['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
+drop = ['TC18-212']
 #%%
-table, chdata = knee_initialize(directory,streams=streams,query='KAB==\'NO\' and DUMMY==\'THOR\' and SPEED==48')
+table, chdata = knee_initialize(directory,streams=streams,query='DUMMY==\'THOR\' and SPEED==48',drop=drop)
+table_full = pd.read_csv(directory + 'Table.csv',index_col=0)
 #%% preprocessing: find dash angle (angle from the vertical where +tive is CW), find key points, and get distances from key points
 def sep_coords(data,dim1 = 'x', dim2 = 'z'):
     if isinstance(data,np.ndarray):
@@ -218,43 +220,13 @@ def get_knee_angle(data):
 #%% set parameters. 
 ip_deltas = range(-60, 30, 10)    
 knee_kp_deltas = range(10,70,10)
-angles = range(-10, 35, 5)
+angles = range(1)
 
 chdata, ip_legend = draw_ip_lines(chdata, ip_deltas)
 chdata, kp_legend = get_knee_kps(chdata, knee_kp_deltas)
 chdata = get_distances(chdata, ip_legend, kp_legend, angles)
 chdata['left_knee_angle'] = chdata[['LEFT KNEE CENTERLINE_' + i for i in ['x','z']]].apply(get_knee_angle,axis=1)
 chdata['angle_from_top'] = chdata[['IP LEFT AT KNEE CENTERLINE_' + i for i in ['x','z']]].apply(get_angle_from_top,axis=1)
-#%% plot femur loads vs. various distances and compute r2
-#angle_method = 'max' # one of 'max', 'end2end'
-#distance_method = 'min' # one of 'min', 'max', 'orig' 
-x_list = []
-for i in ['VEH_LEFT','VEH_RIGHT','VEH_CG']:
-    for j in ['VEH_LEFT','VEH_RIGHT','VEH_CG']:
-        x_list.append((table[i]/table_full.loc[table['PAIR'], j].values).rename(i+'/'+j))
-
-for factor in x_list:
-    y = {'grp1': features['left_femur_load_plus_x1']}
-    x = {'grp1': factor}
-    
-    if len(x['grp1'].dropna())<=10:
-        continue
-    
-    spearmanr = rho(x['grp1'], y['grp1'])
-    pearsonr = corr(x['grp1'], y['grp1'])
-    rsq = r2(x['grp1'], y['grp1'])
-    if np.isnan(spearmanr) or np.isnan(pearsonr) or np.isnan(rsq):
-        break
-    if rsq<0.2:
-        continue
-    if max(spearmanr,pearsonr) < 0.4 and min(spearmanr,pearsonr)>-0.4:
-        continue
-    
-    print(factor.name)
-    print('rho=' + str(spearmanr) + ', R=' + str(pearsonr) + ', R2=' + str(rsq))
-    fig = plot_scatter_with_labels(x, y)
-    fig = set_labels_plotly(fig, {'xlabel': factor.name, 'ylabel': 'Femur Load'})
-    plot(fig)
 
 #%% write points to csv
 features = chdata[[i for i in chdata.columns if '_dist' in i]]
@@ -265,14 +237,59 @@ features['min_distance_from_b'] = chdata[[i for i in chdata.columns if 'b' in i 
 features['left_femur_load_plus_x1'] = features['left_femur_load']+25*features['min_distance_from_b']
 features['delta_veh_cg'] = table['VEH_CG'] - table_full.loc[table['PAIR'],'VEH_CG'].values
 features['ratio_veh_cg'] = table['VEH_CG']/table_full.loc[table['PAIR'],'VEH_CG'].values
-features['f25min'] = chdata[['f' + i + str(25) + 'deg_dist' for i in list(ip_legend) + ['IP LEFT AT KNEE CENTERLINE']]].min(axis=1).rename('f' + str(25) + 'min')
 features['angle_from_top'] = chdata['angle_from_top']
 features['delta_weight'] = table['WEIGHT']-table_full.loc[table['PAIR'],'WEIGHT'].values
 features['pair_femur'] = pd.Series(table_full.loc[table['PAIR'],'FEMUR LEFT'].values,index=chdata.index)
 features['delta_veh_left'] = table['VEH_LEFT']-table_full.loc[table['PAIR'], 'VEH_LEFT'].values
 features['delta_veh_right'] = table['VEH_RIGHT']-table_full.loc[table['PAIR'], 'VEH_RIGHT'].values
 features['veh_cg_veh_right'] = table['VEH_CG']/table_full.loc[table['PAIR'], 'VEH_RIGHT'].values
-features.to_csv(directory+'features.csv')
+features['pair_veh_right'] = pd.Series(table_full.loc[table['PAIR'],'VEH_RIGHT'].values,index=table.index)
+features['veh_left'] = table['VEH_LEFT']
+features['left_foot_z'] = table['LEFT_FOOT_Z']
+#features.to_csv(directory+'features.csv')
+#%% plot femur loads vs. various distances and compute r2
+#angle_method = 'max' # one of 'max', 'end2end'
+#distance_method = 'min' # one of 'min', 'max', 'orig' 
+x_list = [features['min_distance_from_b'],
+          features['ratio_veh_cg']]
+groups = {'grp1': table.index}
+
+for factor in x_list:
+    x = {}
+    y = {}
+    for grp in groups:
+        y[grp] = features.loc[groups[grp], 'left_femur_load']
+        x[grp] = factor.loc[groups[grp]]
+
+    
+#    if len(x['grp'].dropna())<=10:
+#        continue
+#    
+    spearmanr = rho(x['grp1'], y['grp1'])
+    pearsonr = corr(x['grp1'], y['grp1'])
+    rsq = r2(x['grp1'], y['grp1'])
+#    if np.isnan(spearmanr) or np.isnan(pearsonr) or np.isnan(rsq):
+#        break
+#    if rsq<0.2:
+#        continue
+#    if max(spearmanr,pearsonr) < 0.4 and min(spearmanr,pearsonr)>-0.4:
+#        continue
+    
+    print(factor.name)
+    print('rho=' + str(spearmanr) + ', R=' + str(pearsonr) + ', R2=' + str(rsq))
+    fig = plot_scatter_with_labels(x, y)
+    fig = set_labels_plotly(fig, {'xlabel': factor.name, 'ylabel': 'Femur Load', 'legend': {}})
+    plot(fig)
+
+#%%
+import plotly.graph_objs as go
+trace = go.Scatter3d(x=features['min_distance_from_b'],
+                     y=features['ratio_veh_cg'],
+                     z=features['left_femur_load'],
+                     text=table.index,
+                     mode='markers')
+data = [trace]
+plot(data)
 
 #%% initiate JSON file
 to_JSON = {'project_name': 'THOR_Femur',
