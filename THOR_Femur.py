@@ -25,8 +25,10 @@ streams =  ('LEFT KNEE CENTERLINE',
 knee_cols = ['LEFT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
 ip_cols = ['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
 drop = ['TC18-212']
+channels = ['11FEMRLE00THFOZB']
+cutoff = range(100, 1600)
 #%%
-table, chdata = knee_initialize(directory,streams=streams,query='DUMMY==\'THOR\' and SPEED==48',drop=drop)
+table, chdata = knee_initialize(directory,channels, cutoff, streams=streams,query='DUMMY==\'THOR\' and SPEED==48',drop=drop)
 table_full = pd.read_csv(directory + 'Table.csv',index_col=0)
 #%% preprocessing: find dash angle (angle from the vertical where +tive is CW), find key points, and get distances from key points
 def sep_coords(data,dim1 = 'x', dim2 = 'z'):

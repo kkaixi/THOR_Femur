@@ -10,7 +10,8 @@ from plotly.offline import plot
 import plotly.graph_objs as go
 import xlwings as xw
 import os
-from PMG.read_data import read_table
+from PMG.read_data import read_table, read_from_common_store
+from PMG.COM import arrange
 
 
 #%% faro 3d plot streams
@@ -76,9 +77,29 @@ def sep_faro_axes(data):
     # data is in the format of the output of retrieve_faro
     return pd.DataFrame({k+'_'+ax: data[k][ax] for k in data for ax in data[k]})
 
-def knee_initialize(directory,streams=None,tc=None,query=None,filt=None,drop=None):
+def knee_initialize(directory,channels, cutoff, streams=[],tc=None,query=None,filt=None,drop=None):
+    # read table
+    if 'Table.csv' in os.listdir(directory):
+        table = read_table(directory + 'Table.csv')
+    else:
+        print('No table!')
+        return
+    if query:
+        table = table.query(query)
+    if filt:
+        table = table.filter(items=filt)
+    if tc:
+        table = table.loc[tc]
+    tc = table.index
+    
+    # get chdata
+    t, fulldata = read_from_common_store(tc, channels)
+    chdata = arrange.to_chdata(fulldata,cutoff)
+    t = t[cutoff]
+    
+    # append faro points
     # initialize faro points as would be done for regular data
-    if streams==None:
+    if streams==[]:
         streams =  ['RIGHT KNEE CENTERLINE',
                     'IP RIGHT KNEE CENTERLINE',
                     'RIGHT STEERING COLUMN',
@@ -87,25 +108,11 @@ def knee_initialize(directory,streams=None,tc=None,query=None,filt=None,drop=Non
                     'LEFT KNEE HEIGHT ON IP LOWER',
                     'LEFT KNEE HEIGHT ON IP UPPER']
         
-    if 'Table.csv' in os.listdir(directory):
-        table = read_table(directory + 'Table.csv')
-    else:
-        print('No table!')
-        return
-    
-    if query:
-        table = table.query(query)
-        
-    if filt:
-        table = table.filter(items=filt)
-        
-    if tc:
-        table = table.loc[tc]
-    
-    chdata = pd.DataFrame([],index=table.index,columns=[k+'_'+ax for k in streams for ax in ['x','y','z']])
-    for i in table.index:
-        data = sep_faro_axes(retrieve_faro('P:\\Data Analysis\\Data\\driver_knee_faro\\',i + '.xls',streams))
-        chdata.loc[i] = data.apply(lambda x: tuple(x.dropna())).apply(np.asarray)
+    faro = {}
+    for i in tc:
+        faro[i] = sep_faro_axes(retrieve_faro('P:\\Data Analysis\\Data\\driver_knee_faro\\',i + '.xls',streams))
+    faro = arrange.to_chdata(faro)
+    chdata = pd.concat((chdata, faro), axis=1)
     return table, chdata
 
 #%% interpolate knee and IP points at knee centerline and estimate shortest distance
