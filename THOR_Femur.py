@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from string import ascii_lowercase, ascii_uppercase
 from THOR_Femur_helper import *
 from PMG.COM.helper import *
-from PMG.COM.get_props import intersection
+from PMG.COM.get_props import *
 from PMG.COM.plotfuns import *
 from plotly.offline import plot
 import plotly.graph_objs as go
@@ -24,12 +24,54 @@ streams =  ('LEFT KNEE CENTERLINE',
             'LEFT KNEE HEIGHT ON IP LOWER')
 knee_cols = ['LEFT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
 ip_cols = ['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
-drop = ['TC18-212']
-channels = ['11FEMRLE00THFOZB']
-cutoff = range(100, 1600)
+channels = ['11FEMRLE00THFOZB',
+            '10CVEHCG0000ACXD',
+            '11LUSP0000THFOXA',
+            '11LUSP0000THFOYA',
+            '11LUSP0000THFOZA',
+            '11LUSP0000THMOXA',
+            '11LUSP0000THMOYA',
+            '11ILACLE00THFOXA',
+            '11PELV0000THACXA',
+            '11PELV0000THACYA',
+            '11PELV0000THACZA',
+            '11PELV0000THAVXA',
+            '11PELV0000THAVYA',
+            '11PELV0000THAVZA',
+            '11ACTBLE00THFOYB',
+            '11ACTBLE00THFOZB',
+            '11FEMRLE00THFOXB',
+            '11FEMRLE00THFOYB',
+            '11FEMRLE00THMOXB',
+            '11FEMRLE00THMOYB',
+            '11FEMRLE00THMOZB',
+            '11KNSLLE00THDSXC',
+            '11TIBILEUPTHFOXB',
+            '11TIBILEUPTHFOYB',
+            '11TIBILEUPTHFOZB',
+            '11TIBILEUPTHFORB',
+            '11TIBILEUPTHMOXB',
+            '11TIBILEUPTHMOYB',
+            '11TIBILEUPTHMORB',
+            '11TIBILEMITHACXA',
+            '11TIBILEMITHACYA',
+            '11TIBILELOTHFOXB',
+            '11TIBILELOTHFOYB',
+            '11TIBILELOTHFOZB',
+            '11TIBILELOTHMOXB',
+            '11TIBILELOTHMOYB',
+            '11ANKLLE00THANXA',
+            '11ANKLLE00THANYA',
+            '11ANKLLE00THANZA',
+            '11FOOTLE00THACXA',
+            '11FOOTLE00THACYA',
+            '11FOOTLE00THACZA',
+            '11SEBE0000B6FO0D']
+cutoff = range(100, 1000)
 #%%
-table, chdata = knee_initialize(directory,channels, cutoff, streams=streams,query='DUMMY==\'THOR\' and SPEED==48',drop=drop)
+table, t, chdata = knee_initialize(directory,channels, cutoff, streams=streams)
 table_full = pd.read_csv(directory + 'Table.csv',index_col=0)
+i_to_t = get_i_to_t(t)
 #%% preprocessing: find dash angle (angle from the vertical where +tive is CW), find key points, and get distances from key points
 def sep_coords(data,dim1 = 'x', dim2 = 'z'):
     if isinstance(data,np.ndarray):
@@ -231,98 +273,202 @@ chdata['left_knee_angle'] = chdata[['LEFT KNEE CENTERLINE_' + i for i in ['x','z
 chdata['angle_from_top'] = chdata[['IP LEFT AT KNEE CENTERLINE_' + i for i in ['x','z']]].apply(get_angle_from_top,axis=1)
 
 #%% write points to csv
-features = chdata[[i for i in chdata.columns if '_dist' in i]]
-features['left_ip_angle_end2end'] = get_ip_angle(chdata,'end2end')['left_ip_angle']
-features['left_ip_angle_max'] = get_ip_angle(chdata,'max')['left_ip_angle']
-features['left_femur_load'] = table['FEMUR LEFT']
-features['min_distance_from_b'] = chdata[[i for i in chdata.columns if 'b' in i and 'dist' in i]].min(axis=1)
-features['left_femur_load_plus_x1'] = features['left_femur_load']+25*features['min_distance_from_b']
-features['delta_veh_cg'] = table['VEH_CG'] - table_full.loc[table['PAIR'],'VEH_CG'].values
-features['ratio_veh_cg'] = table['VEH_CG']/table_full.loc[table['PAIR'],'VEH_CG'].values
-features['angle_from_top'] = chdata['angle_from_top']
-features['delta_weight'] = table['WEIGHT']-table_full.loc[table['PAIR'],'WEIGHT'].values
-features['pair_femur'] = pd.Series(table_full.loc[table['PAIR'],'FEMUR LEFT'].values,index=chdata.index)
-features['delta_veh_left'] = table['VEH_LEFT']-table_full.loc[table['PAIR'], 'VEH_LEFT'].values
-features['delta_veh_right'] = table['VEH_RIGHT']-table_full.loc[table['PAIR'], 'VEH_RIGHT'].values
-features['veh_cg_veh_right'] = table['VEH_CG']/table_full.loc[table['PAIR'], 'VEH_RIGHT'].values
-features['pair_veh_right'] = pd.Series(table_full.loc[table['PAIR'],'VEH_RIGHT'].values,index=table.index)
-features['veh_left'] = table['VEH_LEFT']
-features['left_foot_z'] = table['LEFT_FOOT_Z']
-#features.to_csv(directory+'features.csv')
+
+t2peak_femur = chdata['11FEMRLE00THFOZB'].apply(get_argmin).dropna().astype(int)
+for tc in t2peak_femur.index:
+    cols = chdata.columns[~chdata.loc[tc].apply(lambda x: isinstance(x, np.float64)).values]
+    chdata.loc[tc, cols] = chdata.loc[tc, cols].apply(lambda x: x[:t2peak_femur[tc]])
+
+feature_funs = {'Min_': [get_min],
+                'Max_': [get_max]}
+features = pd.concat(chdata[channels].chdata.get_features(feature_funs).values(),axis=1,sort=True)
+
+dist_features = chdata[[i for i in chdata.columns if '_dist' in i]]
+dist_features['left_ip_angle_end2end'] = get_ip_angle(chdata,'end2end')['left_ip_angle']
+dist_features['left_ip_angle_max'] = get_ip_angle(chdata,'max')['left_ip_angle']
+dist_features['min_distance_from_a'] = chdata[[i for i in chdata.columns if 'a' in i and 'dist' in i]].min(axis=1)
+dist_features['min_distance_from_b'] = chdata[[i for i in chdata.columns if 'b' in i and 'dist' in i]].min(axis=1)
+dist_features['min_distance_from_c'] = chdata[[i for i in chdata.columns if 'c' in i and 'dist' in i]].min(axis=1)
+dist_features['min_distance_from_d'] = chdata[[i for i in chdata.columns if 'd' in i and 'dist' in i]].min(axis=1)
+dist_features['min_distance_from_e'] = chdata[[i for i in chdata.columns if 'e' in i and 'dist' in i]].min(axis=1)
+dist_features['min_distance_from_f'] = chdata[[i for i in chdata.columns if 'f' in i and 'dist' in i]].min(axis=1)
+dist_features['min_distance_from_g'] = chdata[[i for i in chdata.columns if 'g' in i and 'dist' in i]].min(axis=1)
+dist_features['delta_veh_cg'] = features.loc[table.index, 'Min_10CVEHCG0000ACXD'] - features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values
+dist_features['ratio_veh_cg'] = features.loc[table.index, 'Min_10CVEHCG0000ACXD']/features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values
+dist_features = dist_features.loc[:, (dist_features.count()>(len(features)//2))]
+features = pd.concat((features, dist_features), axis=1)
+#features.to_csv(directory + 'features.csv')
 #%% plot femur loads vs. various distances and compute r2
 #angle_method = 'max' # one of 'max', 'end2end'
 #distance_method = 'min' # one of 'min', 'max', 'orig' 
-x_list = [features['min_distance_from_b'],
-          features['ratio_veh_cg']]
-groups = {'grp1': table.index}
-
-for factor in x_list:
-    x = {}
-    y = {}
-    for grp in groups:
-        y[grp] = features.loc[groups[grp], 'left_femur_load']
-        x[grp] = factor.loc[groups[grp]]
-
-    
-#    if len(x['grp'].dropna())<=10:
-#        continue
+#x_list = [features['min_distance_from_b'],
+#          features['ratio_veh_cg']]
+#groups = {'grp1': table.index}
+#
+#for factor in x_list:
+#    x = {}
+#    y = {}
+#    for grp in groups:
+#        y[grp] = features.loc[groups[grp], 'left_femur_load']
+#        x[grp] = factor.loc[groups[grp]]
+#
 #    
-    spearmanr = rho(x['grp1'], y['grp1'])
-    pearsonr = corr(x['grp1'], y['grp1'])
-    rsq = r2(x['grp1'], y['grp1'])
-#    if np.isnan(spearmanr) or np.isnan(pearsonr) or np.isnan(rsq):
-#        break
-#    if rsq<0.2:
-#        continue
-#    if max(spearmanr,pearsonr) < 0.4 and min(spearmanr,pearsonr)>-0.4:
-#        continue
-    
-    print(factor.name)
-    print('rho=' + str(spearmanr) + ', R=' + str(pearsonr) + ', R2=' + str(rsq))
-    fig = plot_scatter_with_labels(x, y)
-    fig = set_labels_plotly(fig, {'xlabel': factor.name, 'ylabel': 'Femur Load', 'legend': {}})
-    plot(fig)
+##    if len(x['grp'].dropna())<=10:
+##        continue
+##    
+#    spearmanr = rho(x['grp1'], y['grp1'])
+#    pearsonr = corr(x['grp1'], y['grp1'])
+#    rsq = r2(x['grp1'], y['grp1'])
+##    if np.isnan(spearmanr) or np.isnan(pearsonr) or np.isnan(rsq):
+##        break
+##    if rsq<0.2:
+##        continue
+##    if max(spearmanr,pearsonr) < 0.4 and min(spearmanr,pearsonr)>-0.4:
+##        continue
+#    
+#    print(factor.name)
+#    print('rho=' + str(spearmanr) + ', R=' + str(pearsonr) + ', R2=' + str(rsq))
+#    fig = plot_scatter_with_labels(x, y)
+#    fig = set_labels_plotly(fig, {'xlabel': factor.name, 'ylabel': 'Femur Load', 'legend': {}})
+#    plot(fig)
 
 #%%
-import plotly.graph_objs as go
-trace = go.Scatter3d(x=features['min_distance_from_b'],
-                     y=features['ratio_veh_cg'],
-                     z=features['left_femur_load'],
-                     text=table.index,
-                     mode='markers')
-data = [trace]
-plot(data)
+#import plotly.graph_objs as go
+#trace = go.Scatter3d(x=features['min_distance_from_b'],
+#                     y=features['ratio_veh_cg'],
+#                     z=features['left_femur_load'],
+#                     text=table.index,
+#                     mode='markers')
+#data = [trace]
+#plot(data)
 
 #%% initiate JSON file
-to_JSON = {'project_name': 'THOR_Femur',
-           'directory': directory}
-
-with open(directory+'params.json','w') as json_file:
-    json.dump(json_file)
+#to_JSON = {'project_name': 'THOR_Femur',
+#           'directory': directory}
+#
+#with open(directory+'params.json','w') as json_file:
+#    json.dump(json_file)
 #%% plot
-chdata_norm = chdata[['LEFT KNEE CENTERLINE_x','LEFT KNEE CENTERLINE_z', 
-                      'IP LEFT AT KNEE CENTERLINE_x', 'IP LEFT AT KNEE CENTERLINE_z']]
-chdata_norm[[i for i in chdata_norm.columns if '_x' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_x' in i]].sub(chdata['a_x'],'index')
-chdata_norm[[i for i in chdata_norm.columns if '_z' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_z' in i]].sub(chdata['a_z'],'index')
-#chdata_norm[[i for i in chdata_norm.columns if '_x' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_x' in i]].apply(lambda x: x-x['IP LEFT AT KNEE CENTERLINE_x'][0],axis=1)
-#chdata_norm[[i for i in chdata_norm.columns if '_z' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_z' in i]].apply(lambda x: x-x['IP LEFT AT KNEE CENTERLINE_z'][0],axis=1)
-
-subset = table.query('KAB==\'NO\' and DUMMY==\'THOR\'')
-cmap = matplotlib.cm.get_cmap('cool')
-normalize = matplotlib.colors.Normalize(vmin=features['left_femur_load_plus_x1'].min(),vmax=features['left_femur_load_plus_x1'].max())
-
-fig, ax = plt.subplots(figsize=(12,10))
-for tc in subset.index:
-    ax.plot(chdata_norm.at[tc,'LEFT KNEE CENTERLINE_x'],
-             chdata_norm.at[tc,'LEFT KNEE CENTERLINE_z'],
-             color=cmap(normalize(features.at[tc,'left_femur_load_plus_x1'])))
-    ax.plot(chdata_norm.at[tc,'IP LEFT AT KNEE CENTERLINE_x'],
-             chdata_norm.at[tc,'IP LEFT AT KNEE CENTERLINE_z'],
-             color=cmap(normalize(features.at[tc,'left_femur_load_plus_x1'])),
-             label=subset.at[tc,'MODEL'])
-cax, _ = matplotlib.colorbar.make_axes(ax)
-cbar = matplotlib.colorbar.ColorbarBase(cax,cmap=cmap,norm=normalize)
-ax.legend()
+#chdata_norm = chdata[['LEFT KNEE CENTERLINE_x','LEFT KNEE CENTERLINE_z', 
+#                      'IP LEFT AT KNEE CENTERLINE_x', 'IP LEFT AT KNEE CENTERLINE_z']]
+#chdata_norm[[i for i in chdata_norm.columns if '_x' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_x' in i]].sub(chdata['a_x'],'index')
+#chdata_norm[[i for i in chdata_norm.columns if '_z' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_z' in i]].sub(chdata['a_z'],'index')
+##chdata_norm[[i for i in chdata_norm.columns if '_x' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_x' in i]].apply(lambda x: x-x['IP LEFT AT KNEE CENTERLINE_x'][0],axis=1)
+##chdata_norm[[i for i in chdata_norm.columns if '_z' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_z' in i]].apply(lambda x: x-x['IP LEFT AT KNEE CENTERLINE_z'][0],axis=1)
+#
+#subset = table.query('KAB==\'NO\' and DUMMY==\'THOR\'')
+#cmap = matplotlib.cm.get_cmap('cool')
+#normalize = matplotlib.colors.Normalize(vmin=features['left_femur_load_plus_x1'].min(),vmax=features['left_femur_load_plus_x1'].max())
+#
+#fig, ax = plt.subplots(figsize=(12,10))
+#for tc in subset.index:
+#    ax.plot(chdata_norm.at[tc,'LEFT KNEE CENTERLINE_x'],
+#             chdata_norm.at[tc,'LEFT KNEE CENTERLINE_z'],
+#             color=cmap(normalize(features.at[tc,'left_femur_load_plus_x1'])))
+#    ax.plot(chdata_norm.at[tc,'IP LEFT AT KNEE CENTERLINE_x'],
+#             chdata_norm.at[tc,'IP LEFT AT KNEE CENTERLINE_z'],
+#             color=cmap(normalize(features.at[tc,'left_femur_load_plus_x1'])),
+#             label=subset.at[tc,'MODEL'])
+#cax, _ = matplotlib.colorbar.make_axes(ax)
+#cbar = matplotlib.colorbar.ColorbarBase(cax,cmap=cmap,norm=normalize)
+#ax.legend()
 #%%
-for tc in chdata.index:
-    draw_faro_stream(tc,title=tc)
+#for tc in chdata.index:
+#    draw_faro_stream(tc,title=tc)
+
+#%%
+#import lightgbm as lgb
+#lgb_drop = ['Max_11ILACLE00THFOXA',
+#            'Min_10CVEHCG0000ACXD']
+##
+##lgb_drop2 = []
+##
+##lgb_drop = lgb_drop + lgb_drop2
+#
+#
+#
+#x = features.loc[table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'NO\' and SPEED==48').index].drop(lgb_drop, axis=1)
+#y = x.pop('Min_11FEMRLE00THFOZB')
+#
+## dimensionality reduction of x
+#x = x.loc[:,(x.count()>(len(x)//2))] # remove features with a lot of missing values
+#corr = x.corr().abs()>0.6 # remove columns with high correlation
+#drop_cols = []
+#nfeat = len(corr.columns)
+#for i, col in enumerate(corr.columns):
+#    drop = corr[col].values[i+1:]
+#    colnames = corr.columns.values[i+1:]
+#    drop = colnames[drop]
+#    # figure out which one to drop based on which gives the highest R2 score
+#    for d in drop:
+#        if r2(x[col], y) > r2(x[d], y):
+#            drop_cols.append(d)
+#        else:
+#            drop_cols.append(col)
+##    drop_cols.append(colnames[drop])
+##drop_cols = np.unique(np.concatenate(drop_cols))
+#x = x.drop(list(dict.fromkeys(drop_cols)), axis=1)
+#
+#train_data = lgb.Dataset(x, label=y)
+#
+#param = {'objective': 'regression',
+#         'feature_fraction': 0.8,
+#         'min_data': 1,
+#         'min_data_in_bin': 1}
+#
+#n_rounds = 10
+#importance = pd.DataFrame(index=range(n_rounds), columns=x.columns)
+#
+#for i in range(n_rounds):
+#    model = lgb.train(param, train_data)
+#    importance.loc[i] = model.feature_importance()
+##    lgb.plot_importance(model, figsize=(10,8))
+#print(importance.mean().sort_values())
+
+#%% iteratively add regressors
+from sklearn.linear_model import LinearRegression
+rthresh = 1
+rsq = 0
+drop = ['Min_11SEBE0000B6FO0D']
+indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'YES\' and SPEED==48').index
+y = features.loc[indices, 'Min_11FEMRLE00THFOZB']
+best_features = []
+feature_list = features.columns.drop(y.name)
+feature_list = feature_list.drop(best_features)
+corr = features.corr().abs()>0.5
+
+
+while rsq<rthresh and len(best_features)<=10:
+    lr = LinearRegression()
+    rsq_list = pd.Series(index=feature_list)
+    for col in feature_list:
+        if features.loc[indices, col].count() <= len(y)//2:
+            feature_list = feature_list.drop(col)
+            continue
+        x = features.loc[indices, [col] + best_features]
+        i = ~(x.isna().any(axis=1)).values.flatten()
+        lr = lr.fit(x[i], y[i])
+        rsq_list[col] = lr.score(x[i], y[i])
+    if len(rsq_list)==0 or rsq_list.isna().all(): continue
+    feature_add = rsq_list.idxmax()
+    rsq = rsq_list[feature_add]
+    best_features.append(feature_add)
+    
+    feature_list = feature_list.drop(feature_add)
+    feature_list = feature_list.drop([i for i in corr[feature_add][corr[feature_add]].index if i in feature_list])# also remove features with high correlations to the feature added
+    print('adding feature {0}. updated rsq {1}'.format(feature_add, rsq))
+print(best_features)
+
+#%%
+trace = go.Scatter3d(x=features.loc[indices,'Max_11TIBILEMITHACYA'],
+                     y=features.loc[indices,'Max_11ACTBLE00THFOYB'],
+                     z=features.loc[indices,'Min_11FEMRLE00THFOZB'],
+                     mode='markers',
+                     text=indices)
+data = [trace]
+layout = {'scene': {'xaxis': {'title': 'Tibia'},
+                    'yaxis': {'title': 'Actb'},
+                    'zaxis': {'title': 'Femur'}}}
+
+fig = go.Figure(data=data, layout=layout)
+plot(fig)

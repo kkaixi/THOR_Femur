@@ -113,7 +113,7 @@ def knee_initialize(directory,channels, cutoff, streams=[],tc=None,query=None,fi
         faro[i] = sep_faro_axes(retrieve_faro('P:\\Data Analysis\\Data\\driver_knee_faro\\',i + '.xls',streams))
     faro = arrange.to_chdata(faro)
     chdata = pd.concat((chdata, faro), axis=1)
-    return table, chdata
+    return table, t, chdata
 
 #%% interpolate knee and IP points at knee centerline and estimate shortest distance
 #from scipy.spatial.distance import pdist, squareform

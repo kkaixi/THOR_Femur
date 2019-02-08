@@ -4,15 +4,17 @@ source("C:/Users/tangk/AppData/Local/Continuum/anaconda3/PMG/COM/helper.R")
 library(jsonlite)
 
 directory <- 'P:/Data Analysis/Projects/THOR Femur'
+table <- read_table(directory, query=c('DUMMY==\'THOR\'', 'KAB==\'NO\'', 'SPEED==48'))
+rownames(table) <- table$TC
 
 features <- read.csv(file.path(directory,'features.csv'))
-rownames(features) <- features$TC
+rownames(features) <- features$X
+features.trunc <- features[rownames(table),]
 
-model_1d <- lm(left_femur_load ~ min_distance_from_b, data=features)
+#model_1d <- lm(Min_11FEMRLE00THFOZB ~ min_distance_from_b, data=features.trunc)
+#summary(model_1d)
 
-summary(model_1d)
-
-model_2d <- lm(left_femur_load ~ min_distance_from_b + left_foot_z, data=features)
+model_2d <- lm(Min_11FEMRLE00THFOZB ~ Max_11ACTBLE00THFOYB + Max_11TIBILEMITHACYA, data=features.trunc)
 summary(model_2d)
 
 # plot the predicted vs. actual
