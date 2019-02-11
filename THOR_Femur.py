@@ -21,57 +21,44 @@ directory = 'P:\\Data Analysis\\Projects\\THOR Femur\\'
 streams =  ('LEFT KNEE CENTERLINE',
             'IP LEFT AT KNEE CENTERLINE',
             'LEFT KNEE HEIGHT ON IP UPPER',
-            'LEFT KNEE HEIGHT ON IP LOWER')
+            'LEFT KNEE HEIGHT ON IP LOWER',
+            'RIGHT KNEE CENTERLINE',
+            'IP RIGHT KNEE CENTERLINE',
+            'RIGHT STEERING COLUMN')
 knee_cols = ['LEFT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
 ip_cols = ['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
-channels = ['11FEMRLE00THFOZB',
-            '10CVEHCG0000ACXD',
-            '11LUSP0000THFOXA',
-            '11LUSP0000THFOYA',
-            '11LUSP0000THFOZA',
-            '11LUSP0000THMOXA',
-            '11LUSP0000THMOYA',
-            '11ILACLE00THFOXA',
-            '11PELV0000THACXA',
-            '11PELV0000THACYA',
-            '11PELV0000THACZA',
-            '11PELV0000THAVXA',
-            '11PELV0000THAVYA',
-            '11PELV0000THAVZA',
-            '11ACTBLE00THFOYB',
-            '11ACTBLE00THFOZB',
-            '11FEMRLE00THFOXB',
-            '11FEMRLE00THFOYB',
-            '11FEMRLE00THMOXB',
-            '11FEMRLE00THMOYB',
-            '11FEMRLE00THMOZB',
-            '11KNSLLE00THDSXC',
-            '11TIBILEUPTHFOXB',
-            '11TIBILEUPTHFOYB',
-            '11TIBILEUPTHFOZB',
-            '11TIBILEUPTHFORB',
-            '11TIBILEUPTHMOXB',
-            '11TIBILEUPTHMOYB',
-            '11TIBILEUPTHMORB',
-            '11TIBILEMITHACXA',
-            '11TIBILEMITHACYA',
-            '11TIBILELOTHFOXB',
-            '11TIBILELOTHFOYB',
-            '11TIBILELOTHFOZB',
-            '11TIBILELOTHMOXB',
-            '11TIBILELOTHMOYB',
-            '11ANKLLE00THANXA',
-            '11ANKLLE00THANYA',
-            '11ANKLLE00THANZA',
-            '11FOOTLE00THACXA',
-            '11FOOTLE00THACYA',
-            '11FOOTLE00THACZA',
-            '11SEBE0000B6FO0D']
+channels = ['10CVEHCG0000ACXD','11SEBE0000B6FO0D',
+            '11LUSP0000THFOXA','11LUSP0000THFOYA','11LUSP0000THFOZA',
+            '11LUSP0000THMOXA','11LUSP0000THMOYA',
+            '11ILACLE00THFOXA','11ILACRI00THFOXA'
+            '11PELV0000THACXA','11PELV0000THACYA','11PELV0000THACZA',
+            '11PELV0000THAVXA','11PELV0000THAVYA','11PELV0000THAVZA',
+            '11ACTBLE00THFOYB','11ACTBLE00THFOZB','11ACTBRI00THFOYB','11ACTBRI00THFOZB',
+            '11FEMRLE00THFOXB','11FEMRLE00THFOYB','11FEMRLE00THFOZB',
+            '11FEMRRI00THFOXB','11FEMRRI00THFOYB','11FEMRRI00THFOZB',
+            '11FEMRLE00THMOXB','11FEMRLE00THMOYB','11FEMRLE00THMOZB',
+            '11FEMRRI00THMOXB','11FEMRRI00THMOYB','11FEMRRI00THMOZB',
+            '11KNSLLE00THDSXC','11KNSLRI00THDSXC',
+            '11TIBILEUPTHFOXB','11TIBILEUPTHFOYB','11TIBILEUPTHFOZB','11TIBILEUPTHFORB',
+            '11TIBIRIUPTHFOXB','11TIBIRIUPTHFOYB','11TIBIRIUPTHFOZB','11TIBIRIUPTHFORB',
+            '11TIBILEUPTHMOXB','11TIBILEUPTHMOYB','11TIBILEUPTHMORB',
+            '11TIBIRIUPTHMOXB','11TIBIRIUPTHMOYB','11TIBIRIUPTHMORB',
+            '11TIBILEMITHACXA','11TIBILEMITHACYA','11TIBIRIMITHACXA','11TIBIRIMITHACYA',
+            '11TIBILELOTHFOXB','11TIBILELOTHFOYB','11TIBILELOTHFOZB',
+            '11TIBIRILOTHFOXB','11TIBIRILOTHFOYB','11TIBIRILOTHFOZB',
+            '11TIBILELOTHMOXB','11TIBILELOTHMOYB','11TIBIRILOTHMOXB','11TIBIRILOTHMOYB',
+            '11ANKLLE00THANXA','11ANKLLE00THANYA','11ANKLLE00THANZA',
+            '11ANKLRI00THANXA','11ANKLRI00THANYA','11ANKLRI00THANZA',
+            '11FOOTLE00THACXA','11FOOTLE00THACYA','11FOOTLE00THACZA',
+            '11FOOTRI00THACXA','11FOOTRI00THACYA','11FOOTRI00THACZA']
 cutoff = range(100, 1000)
 #%%
 table, t, chdata = knee_initialize(directory,channels, cutoff, streams=streams)
 table_full = pd.read_csv(directory + 'Table.csv',index_col=0)
 i_to_t = get_i_to_t(t)
+
+# preprocessing
+chdata.loc['TC18-216', ['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]] = chdata.loc['TC18-216', ['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]].apply(np.flip)
 #%% preprocessing: find dash angle (angle from the vertical where +tive is CW), find key points, and get distances from key points
 def sep_coords(data,dim1 = 'x', dim2 = 'z'):
     if isinstance(data,np.ndarray):
@@ -86,6 +73,8 @@ def get_max_angle_anchored(data):
     # returns the maximum angle between the first point and the outermost
     # point in the stream
     x, y = sep_coords(data)
+    notna = np.logical_and(~np.isnan(x), ~np.isnan(y))
+    x, y = x[notna], y[notna]
     i = np.argmax(x)
     return np.degrees(np.arctan(np.abs(x[i]-x[0])/np.abs(y[i]-y[0])))
 
@@ -96,11 +85,15 @@ def get_end2end_angle(data):
     # returns the angle between the first and last points of the stream
     # in data
     x, y = sep_coords(data)
+    notna = np.logical_and(~np.isnan(x), ~np.isnan(y))
+    x, y = x[notna], y[notna]
     return np.degrees(np.arctan(np.abs(x[-1]-x[0])/np.abs(y[-1]-y[0])))
 
 def get_angle_from_top(data):
     """largest angle from the top of the IP. Angle is measured CCW from 6 o'clock"""
     x, y = sep_coords(data)
+    notna = np.logical_and(~np.isnan(x), ~np.isnan(y))
+    x, y = x[notna], y[notna]
     if np.argmax(x)==len(x)-1:
         i = np.argmin(x)
     else:
@@ -160,98 +153,104 @@ def ip_points_from_centre(data,ref=0,dist=0):
     else:
         return xkey[0], ykey[0]
     
-def get_ip_angle(chdata,method='max'):
-    """gets angle of ip from vertical using method specified"""
+def get_ip_angle(cols,method='max'):
+    """gets angle of ip from vertical using method specified
+    cols is a dataframe of the x and z coordinates"""
     if method=='max':
-        chdata['left_ip_angle'] = chdata[['IP LEFT AT KNEE CENTERLINE_x','IP LEFT AT KNEE CENTERLINE_z']].apply(get_max_angle_anchored,axis=1)
+        angles = cols.apply(get_max_angle_anchored,axis=1)
     elif method=='end2end':
-        chdata['left_ip_angle'] = chdata[['IP LEFT AT KNEE CENTERLINE_x','IP LEFT AT KNEE CENTERLINE_z']].apply(get_end2end_angle,axis=1)
+        angles = cols.apply(get_end2end_angle,axis=1)
     else:
         print('method not valid!')
         return
-    return chdata
+    return angles
     
 
-def draw_ip_lines(chdata, ip_deltas):
+def draw_ip_lines(upper, lower, center_ref, ip_deltas):
     """draws fake ip lines and adds it to chdata
-    returns chdata with added columns and legend specifying what the letters mean"""
+    returns dataframe with artificial streams and legend specifying what the letters mean
+    upper and lower are the respective streams on the IP
+    center_ref is the IP at knee centerline"""
     ind_iter = iter(ascii_uppercase)
     legend = {}
+    ip_streams = {}
     
     for i in ip_deltas:
         ip_ind = next(ind_iter)
         legend[ip_ind] = 'on_ip_' + str(i) + 'mm_from_center'
-        colnames = [ip_ind + coord for coord in ['_x','_y','_z']]
-        chdata = chdata.assign(**{col: np.nan for col in colnames})
-        chdata[colnames] = chdata[colnames].astype(object)
+        colnames = [ip_ind + coord for coord in ['_x','_y','_z']]        
+        ip_streams.update({col: pd.Series(index=center_ref.index).astype('object') for col in colnames})
         
-        for tc in chdata.index:
+        for tc in center_ref.index:
             p = pd.DataFrame(columns=['x','y','z'], index=['p1','p2'])
             
-            p.loc['p1',['x','y']] = ip_points_from_centre(chdata.loc[tc,['LEFT KNEE HEIGHT ON IP UPPER_x','LEFT KNEE HEIGHT ON IP UPPER_y']],
-                                       ref=np.mean(chdata.at[tc,'IP LEFT AT KNEE CENTERLINE_y']),
+            p.loc['p1',['x','y']] = ip_points_from_centre(upper.loc[tc, [i for i in upper.columns if '_x' in i or '_y' in i]],
+                                       ref=np.nanmean(center_ref[tc]),
                                        dist=i) # point on top line
-            p.at['p1','z'] = np.mean(chdata.at[tc,'LEFT KNEE HEIGHT ON IP UPPER_z'])
+            p.at['p1','z'] = np.nanmean(upper.filter(regex='_z', axis=1).squeeze()[tc])
             
-            p.loc['p2',['x','y']] = ip_points_from_centre(chdata.loc[tc,['LEFT KNEE HEIGHT ON IP LOWER_x','LEFT KNEE HEIGHT ON IP LOWER_y']],
-                                       ref=np.mean(chdata.at[tc,'IP LEFT AT KNEE CENTERLINE_y']),
+            p.loc['p2',['x','y']] = ip_points_from_centre(lower.loc[tc, [i for i in lower.columns if '_x' in i or '_y' in i]],
+                                       ref=np.nanmean(center_ref[tc]),
                                        dist=i) # point on bottom line
-            p.at['p2','z'] = np.mean(chdata.at[tc,'LEFT KNEE HEIGHT ON IP LOWER_z'])
-            
-            tmp = pd.DataFrame(columns=colnames)
+            p.at['p2','z'] = np.nanmean(lower.filter(regex='_z', axis=1).squeeze()[tc])
             for col in colnames:
-                tmp[col] = np.linspace(p.at['p1',col[-1]],p.at['p2',col[-1]])
-            chdata.loc[tc,colnames] = tmp.apply(tuple).apply(np.array)
-    return chdata, legend
+                ip_streams[col][tc] = tuple(np.linspace(p.at['p1', col[-1]], p.at['p2', col[-1]]))
+    ip_streams = pd.DataFrame(ip_streams).applymap(np.array)
+    return ip_streams, legend
 
-def get_knee_kps(chdata, knee_kp_deltas):
-    """gets key points on knee and adds it to chdata
-    returns chdata with added columns and legend specifying what the letters mean"""
-    ind_iter = iter(ascii_lowercase)
+def get_knee_kps(cols, knee_kp_deltas, ind_iter=None):
+    """returns key points on knee with a legend specifying what the letters mean
+    cols is the columsn with the coordinates of the knee
+    ind_iter is the optional iterator to use for the legend"""
+    if ind_iter is None:
+        ind_iter = iter(ascii_lowercase)
     legend = {}
-  
+    kps = {}
+    
     #find the farthest inward point
     ind = next(ind_iter)
-    for axis in ['_x','_y','_z']:
-        chdata[ind+axis] = chdata['LEFT KNEE CENTERLINE'+axis].apply(lambda x: x[1])
-        legend[ind] = 'kp_farthest_backward'
+    for k in cols.columns:
+        kps[ind + k[-2:]] = cols[k].apply(lambda x: x[1])
+    legend[ind] = 'kp_farthest_backward'
         
     # find key points using distance from the farthest inward point
     for dist in knee_kp_deltas:
         ind = next(ind_iter)
-        for tc in chdata.index: 
-            ref = chdata.at[tc,'LEFT KNEE CENTERLINE_z'][1]
+        kps[ind + '_x'] = pd.Series(index=cols.index)
+        kps[ind + '_z'] = pd.Series(index=cols.index)
+        for tc in cols.index: 
+            ref = cols.filter(regex='_z', axis=1).squeeze()[tc][1]
             
-            xkey, ykey = key_points_by_distance(chdata.loc[tc,knee_cols],ref,dist)
-            chdata.at[tc,ind+'_x'] = xkey
-            chdata.at[tc,ind+'_z'] = ykey
-            legend[ind] = 'kp_dist_'+str(dist)
-    return chdata, legend
+            xkey, ykey = key_points_by_distance(cols.loc[tc],ref,dist)
+            kps[ind + '_x'][tc] = xkey
+            kps[ind + '_z'][tc] = ykey
+        legend[ind] = 'kp_dist_'+str(dist)
+    kps = pd.DataFrame(kps)
+    return kps, legend
 
 
-def get_distances(chdata, ip_streams, knee_kps, angles):
-    """gets distances between key points on knee and ip at angles specified
+def get_distances(kps, streams, angles):
+    """gets distances between key points on knee and ip streams at angles specified
     returns chdata with distance info
-    ip_streams is the legend output of draw_ip_lines
-    knee_kps is the legend output of get_knee_kps
     angles is the range of angles to try"""
-    ip_streams = list(ip_streams)
-    knee_kps = list(knee_kps)
-    if 'IP LEFT AT KNEE CENTERLINE' not in ip_streams:
-        ip_streams.append('IP LEFT AT KNEE CENTERLINE')
-    for tc in chdata.index:
+    knee_kps = kps.filter(regex='_x', axis=1).columns.map(lambda x: x.rstrip('_x'))
+    ip_streams = streams.filter(regex='_x', axis=1).columns.map(lambda x: x.rstrip('_x'))
+    distances = {kp + ip + str(angle) + dist: pd.Series(index=kps.index) for kp in knee_kps for ip in ip_streams for angle in angles for dist in ['deg_x', 'deg_z', 'deg_dist']}
+    
+    for tc in kps.index:
         for kp in knee_kps:
-            for ip in ip_streams: 
+            for ip in ip_streams:
                 ip_cols = [ip + coord for coord in ['_x','_y','_z']]
                 for angle in angles:
-                    ref_x = chdata.at[tc,kp+'_x']
-                    ref_y = chdata.at[tc,kp+'_z']
-                    xkey, ykey = ip_key_point_from_angle(chdata.loc[tc,ip_cols],(ref_x,ref_y),angle)
+                    ref_x = kps.at[tc, kp + '_x']
+                    ref_y = kps.at[tc, kp + '_z']
+                    xkey, ykey = ip_key_point_from_angle(streams.loc[tc, ip_cols], (ref_x, ref_y), angle)
                     dist = np.sqrt((ref_x-xkey)**2+(ref_y-ykey)**2)
-                    chdata.at[tc, kp + ip + str(angle) + 'deg_x'] = xkey
-                    chdata.at[tc, kp + ip + str(angle) + 'deg_z'] = ykey
-                    chdata.at[tc, kp + ip + str(angle) + 'deg_dist'] = dist    
-    return chdata
+                    distances[kp + ip + str(angle) + 'deg_x'][tc] = xkey
+                    distances[kp + ip + str(angle) + 'deg_z'][tc] = ykey
+                    distances[kp + ip + str(angle) + 'deg_dist'][tc] = dist
+    distances = pd.DataFrame(distances)
+    return distances
 
 
 def get_knee_angle(data):
@@ -265,38 +264,55 @@ def get_knee_angle(data):
 ip_deltas = range(-60, 30, 10)    
 knee_kp_deltas = range(10,70,10)
 angles = range(1)
+features = []
+#%% get distances for left femur
+stream, ip_legend = draw_ip_lines(chdata[['LEFT KNEE HEIGHT ON IP UPPER_' + ax for ax in ['x','y','z']]], 
+                                  chdata[['LEFT KNEE HEIGHT ON IP LOWER_' + ax for ax in ['x','y','z']]], 
+                                  chdata['IP LEFT AT KNEE CENTERLINE_y'], ip_deltas)
+chdata = pd.concat((chdata, stream), axis=1)
 
-chdata, ip_legend = draw_ip_lines(chdata, ip_deltas)
-chdata, kp_legend = get_knee_kps(chdata, knee_kp_deltas)
-chdata = get_distances(chdata, ip_legend, kp_legend, angles)
-chdata['left_knee_angle'] = chdata[['LEFT KNEE CENTERLINE_' + i for i in ['x','z']]].apply(get_knee_angle,axis=1)
-chdata['angle_from_top'] = chdata[['IP LEFT AT KNEE CENTERLINE_' + i for i in ['x','z']]].apply(get_angle_from_top,axis=1)
+kp_coords, kp_legend = get_knee_kps(chdata[knee_cols], knee_kp_deltas)
+features.append(kp_coords.rename(lambda x: 'Left_' + x, axis=1))
+
+distances = get_distances(kp_coords, pd.concat((stream, chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]]), axis=1), angles)
+features.append(distances.rename(lambda x: 'Left_' + x, axis=1))
+
+for kp in kp_legend:
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('Left_min_distance_from_{0}'.format(kp)))
+
+#%% get distances for right femur
+kp_coords, kp_legend = get_knee_kps(chdata[[i.replace('LEFT', 'RIGHT') for i in knee_cols]], knee_kp_deltas)
+features.append(kp_coords.rename(lambda x: 'Right_' + x, axis=1))
+
+distances = get_distances(kp_coords, chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], angles)
+features.append(distances.rename(lambda x: 'Right_' + x, axis=1))
+
+for kp in kp_legend:
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('Right_min_distance_from_{0}'.format(kp)))
 
 #%% write points to csv
 
-t2peak_femur = chdata['11FEMRLE00THFOZB'].apply(get_argmin).dropna().astype(int)
-for tc in t2peak_femur.index:
+# re cut off so that each tc is cut off to the time of peak femur load
+left_t2peak = chdata['11FEMRLE00THFOZB'].apply(get_argmin).dropna().astype(int)
+right_t2peak = chdata['11FEMRRI00THFOZB'].apply(get_argmin).dropna().astype(int)
+cutoff = pd.concat((left_t2peak, right_t2peak), axis=1).max(axis=1)
+for tc in cutoff.index:
     cols = chdata.columns[~chdata.loc[tc].apply(lambda x: isinstance(x, np.float64)).values]
-    chdata.loc[tc, cols] = chdata.loc[tc, cols].apply(lambda x: x[:t2peak_femur[tc]])
+    chdata.loc[tc, cols] = chdata.loc[tc, cols].apply(lambda x: x[:cutoff[tc]])
 
 feature_funs = {'Min_': [get_min],
                 'Max_': [get_max]}
-features = pd.concat(chdata[channels].chdata.get_features(feature_funs).values(),axis=1,sort=True)
+response_features = pd.concat(chdata[channels].chdata.get_features(feature_funs).values(),axis=1,sort=True)
+features.append(response_features)
+features.append(get_ip_angle(chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'end2end').rename('left_ip_angle_end2end'))
+features.append(get_ip_angle(chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'max').rename('left_ip_angle_max'))
+features.append(get_ip_angle(chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'end2end').rename('right_ip_angle_end2end'))
+features.append(get_ip_angle(chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'max').rename('right_ip_angle_max'))
+features.append((response_features.loc[table.index, 'Min_10CVEHCG0000ACXD'] - response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('delta_veh_cg'))
+features.append((response_features.loc[table.index, 'Min_10CVEHCG0000ACXD']/response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('ratio_veh_cg'))
 
-dist_features = chdata[[i for i in chdata.columns if '_dist' in i]]
-dist_features['left_ip_angle_end2end'] = get_ip_angle(chdata,'end2end')['left_ip_angle']
-dist_features['left_ip_angle_max'] = get_ip_angle(chdata,'max')['left_ip_angle']
-dist_features['min_distance_from_a'] = chdata[[i for i in chdata.columns if 'a' in i and 'dist' in i]].min(axis=1)
-dist_features['min_distance_from_b'] = chdata[[i for i in chdata.columns if 'b' in i and 'dist' in i]].min(axis=1)
-dist_features['min_distance_from_c'] = chdata[[i for i in chdata.columns if 'c' in i and 'dist' in i]].min(axis=1)
-dist_features['min_distance_from_d'] = chdata[[i for i in chdata.columns if 'd' in i and 'dist' in i]].min(axis=1)
-dist_features['min_distance_from_e'] = chdata[[i for i in chdata.columns if 'e' in i and 'dist' in i]].min(axis=1)
-dist_features['min_distance_from_f'] = chdata[[i for i in chdata.columns if 'f' in i and 'dist' in i]].min(axis=1)
-dist_features['min_distance_from_g'] = chdata[[i for i in chdata.columns if 'g' in i and 'dist' in i]].min(axis=1)
-dist_features['delta_veh_cg'] = features.loc[table.index, 'Min_10CVEHCG0000ACXD'] - features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values
-dist_features['ratio_veh_cg'] = features.loc[table.index, 'Min_10CVEHCG0000ACXD']/features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values
-dist_features = dist_features.loc[:, (dist_features.count()>(len(features)//2))]
-features = pd.concat((features, dist_features), axis=1)
+features = pd.concat(features, axis=1)
+features = features.loc[:, (features.count())>len(features)//2] # get rid of features with too many na's 
 #features.to_csv(directory + 'features.csv')
 #%% plot femur loads vs. various distances and compute r2
 #angle_method = 'max' # one of 'max', 'end2end'
@@ -427,13 +443,16 @@ features = pd.concat((features, dist_features), axis=1)
 
 #%% iteratively add regressors
 from sklearn.linear_model import LinearRegression
-rthresh = 1
+rthresh = 0.9
 rsq = 0
 drop = ['Min_11SEBE0000B6FO0D']
-indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'YES\' and SPEED==48').index
-y = features.loc[indices, 'Min_11FEMRLE00THFOZB']
+indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'NO\' and SPEED==48').index
+y = features.loc[indices, 'Min_11FEMRRI00THFOZB']
+drop.extend([i for i in features.columns if i[10:12]=='LE'])
+
 best_features = []
 feature_list = features.columns.drop(y.name)
+feature_list = feature_list.drop(drop)
 feature_list = feature_list.drop(best_features)
 corr = features.corr().abs()>0.5
 
