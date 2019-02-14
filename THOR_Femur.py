@@ -263,7 +263,7 @@ def get_knee_angle(data):
 #%% set parameters. 
 ip_deltas = range(-60, 30, 10)    
 knee_kp_deltas = range(10,70,10)
-angles = range(1)
+angles = range(0, 20, 5)
 features = []
 #%% get distances for left femur
 stream, ip_legend = draw_ip_lines(chdata[['LEFT KNEE HEIGHT ON IP UPPER_' + ax for ax in ['x','y','z']]], 
@@ -279,7 +279,21 @@ features.append(distances.rename(lambda x: 'Left_' + x, axis=1))
 
 for kp in kp_legend:
     features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('Left_min_distance_from_{0}'.format(kp)))
-
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].max(axis=1).rename('Left_max_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].mean(axis=1).rename('Left_mean_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].median(axis=1).rename('Left_median_distance_from_{0}'.format(kp)))
+    # get min, max, mean, median distance holding deg constant
+    for angle in angles:
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].min(axis=1).rename('Left_min_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].max(axis=1).rename('Left_max_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].mean(axis=1).rename('Left_mean_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].median(axis=1).rename('Left_median_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+    # get min, max, mean, median distance holding IP constant
+    for ip in list(ip_legend) + ['IP LEFT AT KNEE CENTERLINE']:
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].min(axis=1).rename('Left_min_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].max(axis=1).rename('Left_max_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].mean(axis=1).rename('Left_mean_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].median(axis=1).rename('Left_median_distance_from_{0}_to_{1}'.format(kp, ip)))
 #%% get distances for right femur
 kp_coords, kp_legend = get_knee_kps(chdata[[i.replace('LEFT', 'RIGHT') for i in knee_cols]], knee_kp_deltas)
 features.append(kp_coords.rename(lambda x: 'Right_' + x, axis=1))
@@ -289,6 +303,21 @@ features.append(distances.rename(lambda x: 'Right_' + x, axis=1))
 
 for kp in kp_legend:
     features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('Right_min_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].max(axis=1).rename('Right_max_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].mean(axis=1).rename('Right_mean_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].median(axis=1).rename('Right_median_distance_from_{0}'.format(kp)))
+    # get min, max, mean, median distance holding deg constant
+    for angle in angles:
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].min(axis=1).rename('Right_min_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].max(axis=1).rename('Right_max_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].mean(axis=1).rename('Right_mean_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].median(axis=1).rename('Right_median_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+    # get min, max, mean, median distance holding IP constant
+    for ip in list(ip_legend) + ['IP RIGHT KNEE CENTERLINE']:
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].min(axis=1).rename('Right_min_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].max(axis=1).rename('Right_max_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].mean(axis=1).rename('Right_mean_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].median(axis=1).rename('Right_median_distance_from_{0}_to_{1}'.format(kp, ip)))
 
 #%% write points to csv
 
@@ -442,41 +471,77 @@ features = features.loc[:, (features.count())>len(features)//2] # get rid of fea
 #print(importance.mean().sort_values())
 
 #%% iteratively add regressors
-from sklearn.linear_model import LinearRegression
-rthresh = 0.9
-rsq = 0
-drop = ['Min_11SEBE0000B6FO0D']
+from sklearn.linear_model import LinearRegression, ElasticNetCV, ElasticNet, LassoLarsCV, OrthogonalMatchingPursuit, Lasso, Ridge, Lars
+
 indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'NO\' and SPEED==48').index
-y = features.loc[indices, 'Min_11FEMRRI00THFOZB']
-drop.extend([i for i in features.columns if i[10:12]=='LE'])
+y = features.loc[indices, 'Min_11FEMRLE00THFOZB']
+x = features.loc[indices].drop(y.name, axis=1)
+drop = [i for i in features.columns if i[4:6]=='11' or 'right' in i.lower() or '_x' in i or '_y' in i or '_z' in i]
+#drop = []
+drop.extend(['Max_10CVEHCG0000ACXD'])
+for col in x:
+    x[col] = x[col].replace(np.nan, x[col].mean())
+x = x.drop([i for i in drop if i in x], axis=1)
+model = LassoLarsCV(max_iter=3)
+model = model.fit(x, y)
+coefs = pd.Series(model.coef_, index=x.columns)
+keep_cols = coefs[coefs.abs()>0]
+x = x[keep_cols.index]
+model = model.fit(x, y)
+model.score(x, y)
+
+
+
+
+
+def stepwise_regression(x, y, rthresh=0.8, feature_thresh=4, corr_thresh=0.5, drop=[], include_features=[]):
+    best_features = []
+    best_features.extend(include_features)
+    rsq = 0
+    feature_list = x.columns.drop([i for i in drop if i in x.columns])
+    feature_list = feature_list.drop([i for i in best_features if i in feature_list])
+    corr = x.corr().abs()>corr_thresh
+    
+    while rsq<rthresh and len(best_features)<=feature_thresh and len(feature_list)>0:
+        lr = LinearRegression()
+        rsq_list = pd.Series(index=feature_list)
+        for col in feature_list:
+            if x[col].count() <= 4:
+                feature_list = feature_list.drop(col)
+                continue
+            xin = x[[col] + best_features]
+            i = np.logical_and(~(xin.isna().any(axis=1)).values.flatten(), ~y.isna().values)
+            lr = lr.fit(xin[i], y[i])
+            rsq_list[col] = lr.score(xin[i], y[i])
+        if len(rsq_list)==0 or rsq_list.isna().all(): break
+        feature_add = rsq_list.idxmax()
+        rsq = rsq_list[feature_add]
+        best_features.append(feature_add)
+        feature_list = feature_list.drop(feature_add)
+        feature_list = feature_list.drop([i for i in corr[feature_add][corr[feature_add]].index if i in feature_list])
+        print('adding feature {0}. updated rsq {1}'.format(feature_add, rsq))
+    return best_features, rsq
+    
+    
+pct_selection = 0.9
+niter = 10
+indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'NO\' and SPEED==48').index
+y = features.loc[indices, 'Left_aC5deg_dist']
+x = features.loc[indices].drop(y.name, axis=1)
+drop = [i for i in features.columns if i[4]!='1']
+drop.extend(['Max_10CVEHCG0000ACXD'])
 
 best_features = []
-feature_list = features.columns.drop(y.name)
-feature_list = feature_list.drop(drop)
-feature_list = feature_list.drop(best_features)
-corr = features.corr().abs()>0.5
-
-
-while rsq<rthresh and len(best_features)<=10:
-    lr = LinearRegression()
-    rsq_list = pd.Series(index=feature_list)
-    for col in feature_list:
-        if features.loc[indices, col].count() <= len(y)//2:
-            feature_list = feature_list.drop(col)
-            continue
-        x = features.loc[indices, [col] + best_features]
-        i = ~(x.isna().any(axis=1)).values.flatten()
-        lr = lr.fit(x[i], y[i])
-        rsq_list[col] = lr.score(x[i], y[i])
-    if len(rsq_list)==0 or rsq_list.isna().all(): continue
-    feature_add = rsq_list.idxmax()
-    rsq = rsq_list[feature_add]
-    best_features.append(feature_add)
-    
-    feature_list = feature_list.drop(feature_add)
-    feature_list = feature_list.drop([i for i in corr[feature_add][corr[feature_add]].index if i in feature_list])# also remove features with high correlations to the feature added
-    print('adding feature {0}. updated rsq {1}'.format(feature_add, rsq))
-print(best_features)
+subsets = []
+i = 0
+while i <= niter:
+    print(i)
+    sel = np.random.choice(indices, int(len(indices)*pct_selection), replace=False).tolist()
+    if sel in subsets:
+        continue
+    best_features.append(stepwise_regression(x.loc[sel], y.loc[sel], drop=drop))
+    subsets.append(sel)
+    i = i + 1
 
 #%%
 trace = go.Scatter3d(x=features.loc[indices,'Max_11TIBILEMITHACYA'],
