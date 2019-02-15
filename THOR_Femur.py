@@ -16,6 +16,9 @@ from PMG.COM.get_props import *
 from PMG.COM.plotfuns import *
 from plotly.offline import plot
 import plotly.graph_objs as go
+from sklearn.linear_model import Lars, LarsCV, LassoLars, LassoLarsCV 
+from sklearn.preprocessing import StandardScaler
+import re
 
 directory = 'P:\\Data Analysis\\Projects\\THOR Femur\\'
 streams =  ('LEFT KNEE CENTERLINE',
@@ -120,19 +123,22 @@ def key_points_by_distance(data, ref=0, dist=0):
     else:
         return xkey[0], ykey[0]
 
-def ip_key_point_from_angle(data,ref,angle):
+def ip_key_point_from_angle(data,ref,angle,coords=['x','z'],sgn=-1):
     # data is a pd.Series of IP points
     # ref is a tuple of reference point
     # angle is the angle (duh)
     # returns the coordinates of the intersection between the points in data
     # and the line drawn from ref towards the IP at an angle angle
+    # coords are the axes that the angles are calculated from
+    # the angle is 0 degrees along coords[0] and 90 degrees along coords[1]
+    # sgn is the sign of delta_x (to control the direction of 0 degrees)
     
-    x, y = sep_coords(data)
+    x, y = sep_coords(data, dim1=coords[0], dim2=coords[1])
     
     delta_x = 200
     delta_y = delta_x*np.tan(np.radians(angle))
     
-    ref_x = np.linspace(ref[0],ref[0]-delta_x)
+    ref_x = np.linspace(ref[0],ref[0]+sgn*delta_x)
     ref_y = np.linspace(ref[1],ref[1]+delta_y)
 
     xkey, ykey = intersection(x,y,ref_x,ref_y)
@@ -217,37 +223,41 @@ def get_knee_kps(cols, knee_kp_deltas, ind_iter=None):
     for dist in knee_kp_deltas:
         ind = next(ind_iter)
         kps[ind + '_x'] = pd.Series(index=cols.index)
+        kps[ind + '_y'] = pd.Series(index=cols.index)
         kps[ind + '_z'] = pd.Series(index=cols.index)
         for tc in cols.index: 
             ref = cols.filter(regex='_z', axis=1).squeeze()[tc][1]
             
             xkey, ykey = key_points_by_distance(cols.loc[tc],ref,dist)
             kps[ind + '_x'][tc] = xkey
+            kps[ind + '_y'][tc] = np.nanmean(cols.filter(regex='_y', axis=1).squeeze()[tc])
             kps[ind + '_z'][tc] = ykey
         legend[ind] = 'kp_dist_'+str(dist)
     kps = pd.DataFrame(kps)
     return kps, legend
 
 
-def get_distances(kps, streams, angles):
+def get_distances(kps, streams, angles, coords=['x','z'], sgn=-1):
     """gets distances between key points on knee and ip streams at angles specified
     returns chdata with distance info
-    angles is the range of angles to try"""
+    angles is the range of angles to try
+    coords are the axes along which the angle calculation is made, with 
+    sgn*coords[0] corresponding to 0 degrees"""
     knee_kps = kps.filter(regex='_x', axis=1).columns.map(lambda x: x.rstrip('_x'))
     ip_streams = streams.filter(regex='_x', axis=1).columns.map(lambda x: x.rstrip('_x'))
-    distances = {kp + ip + str(angle) + dist: pd.Series(index=kps.index) for kp in knee_kps for ip in ip_streams for angle in angles for dist in ['deg_x', 'deg_z', 'deg_dist']}
+    distances = {kp + ip + str(angle) + dist: pd.Series(index=kps.index) for kp in knee_kps for ip in ip_streams for angle in angles for dist in ['deg_'+coords[0], 'deg_'+coords[1], 'deg_dist']}
     
     for tc in kps.index:
         for kp in knee_kps:
             for ip in ip_streams:
                 ip_cols = [ip + coord for coord in ['_x','_y','_z']]
                 for angle in angles:
-                    ref_x = kps.at[tc, kp + '_x']
-                    ref_y = kps.at[tc, kp + '_z']
-                    xkey, ykey = ip_key_point_from_angle(streams.loc[tc, ip_cols], (ref_x, ref_y), angle)
+                    ref_x = kps.at[tc, '_'.join((kp, coords[0]))]
+                    ref_y = kps.at[tc, '_'.join((kp, coords[1]))]
+                    xkey, ykey = ip_key_point_from_angle(streams.loc[tc, ip_cols], (ref_x, ref_y), angle, coords=coords, sgn=sgn)
                     dist = np.sqrt((ref_x-xkey)**2+(ref_y-ykey)**2)
-                    distances[kp + ip + str(angle) + 'deg_x'][tc] = xkey
-                    distances[kp + ip + str(angle) + 'deg_z'][tc] = ykey
+                    distances[kp + ip + str(angle) + 'deg_' + coords[0]][tc] = xkey
+                    distances[kp + ip + str(angle) + 'deg_' + coords[1]][tc] = ykey
                     distances[kp + ip + str(angle) + 'deg_dist'][tc] = dist
     distances = pd.DataFrame(distances)
     return distances
@@ -272,46 +282,51 @@ stream, ip_legend = draw_ip_lines(chdata[['LEFT KNEE HEIGHT ON IP UPPER_' + ax f
 chdata = pd.concat((chdata, stream), axis=1)
 
 kp_coords, kp_legend = get_knee_kps(chdata[knee_cols], knee_kp_deltas)
-features.append(kp_coords.rename(lambda x: 'Left_' + x, axis=1))
+features.append(kp_coords.rename(lambda x: 'LE_' + x, axis=1))
 
 distances = get_distances(kp_coords, pd.concat((stream, chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]]), axis=1), angles)
-features.append(distances.rename(lambda x: 'Left_' + x, axis=1))
+features.append(distances.rename(lambda x: 'LE_' + x, axis=1))
 
 for kp in kp_legend:
-    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('Left_min_distance_from_{0}'.format(kp)))
-    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].max(axis=1).rename('Left_max_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('LE_min_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].max(axis=1).rename('LE_max_distance_from_{0}'.format(kp)))
     # get min, max, mean, median distance holding deg constant
     for angle in angles:
-        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].min(axis=1).rename('Left_min_distance_from_{0}_at_{1}deg'.format(kp, angle)))
-        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].max(axis=1).rename('Left_max_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].min(axis=1).rename('LE_min_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].max(axis=1).rename('LE_max_distance_from_{0}_at_{1}deg'.format(kp, angle)))
     # get min, max, mean, median distance holding IP constant
     for ip in list(ip_legend) + ['IP LEFT AT KNEE CENTERLINE']:
-        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].min(axis=1).rename('Left_min_distance_from_{0}_to_{1}'.format(kp, ip)))
-        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].max(axis=1).rename('Left_max_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].min(axis=1).rename('LE_min_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].max(axis=1).rename('LE_max_distance_from_{0}_to_{1}'.format(kp, ip)))
 for ip in list(ip_legend) + ['IP LEFT AT KNEE CENTERLINE']:
-    features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].min(axis=1).rename('Left_min_distance_to_{0}'.format(ip)))
-    features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].max(axis=1).rename('Left_max_distance_to_{0}'.format(ip)))
+    features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].min(axis=1).rename('LE_min_distance_to_{0}'.format(ip)))
+    features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].max(axis=1).rename('LE_max_distance_to_{0}'.format(ip)))
 #%% get distances for right femur
 kp_coords, kp_legend = get_knee_kps(chdata[[i.replace('LEFT', 'RIGHT') for i in knee_cols]], knee_kp_deltas)
-features.append(kp_coords.rename(lambda x: 'Right_' + x, axis=1))
+features.append(kp_coords.rename(lambda x: 'RI_' + x, axis=1))
 
 distances = get_distances(kp_coords, chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], angles)
-features.append(distances.rename(lambda x: 'Right_' + x, axis=1))
+features.append(distances.rename(lambda x: 'RI_' + x, axis=1))
+
+sw_distances = get_distances(kp_coords, chdata[['RIGHT STEERING COLUMN_' + ax for ax in ['x','y','z']]], angles, coords=['y','z'], sgn=-1)
+features.append(sw_distances.rename(lambda x: 'RI_' + x, axis=1))
 
 for kp in kp_legend:
-    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('Right_min_distance_from_{0}'.format(kp)))
-    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].max(axis=1).rename('Right_max_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('RI_min_distance_from_{0}'.format(kp)))
+    features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].max(axis=1).rename('RI_max_distance_from_{0}'.format(kp)))
     # get min, max, mean, median distance holding deg constant
     for angle in angles:
-        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].min(axis=1).rename('Right_min_distance_from_{0}_at_{1}deg'.format(kp, angle)))
-        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].max(axis=1).rename('Right_max_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].min(axis=1).rename('RI_min_distance_from_{0}_at_{1}deg'.format(kp, angle)))
+        features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].max(axis=1).rename('RI_max_distance_from_{0}_at_{1}deg'.format(kp, angle)))
     # get min, max, mean, median distance holding IP constant
     for ip in list(ip_legend) + ['IP RIGHT KNEE CENTERLINE']:
-        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].min(axis=1).rename('Right_min_distance_from_{0}_to_{1}'.format(kp, ip)))
-        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].max(axis=1).rename('Right_max_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].min(axis=1).rename('RI_min_distance_from_{0}_to_{1}'.format(kp, ip)))
+        features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].max(axis=1).rename('RI_max_distance_from_{0}_to_{1}'.format(kp, ip)))
 for ip in list(ip_legend) + ['IP RIGHT KNEE CENTERLINE']:
-    features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].min(axis=1).rename('Right_min_distance_to_{0}'.format(ip)))
-    features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].max(axis=1).rename('Right_max_distance_to_{0}'.format(ip)))
+    features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].min(axis=1).rename('RI_min_distance_to_{0}'.format(ip)))
+    features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].max(axis=1).rename('RI_max_distance_to_{0}'.format(ip)))
+features.append(sw_distances[[i for i in sw_distances.columns if 'dist' in i]].min(axis=1).rename('RI_min_distance_to_sw'))
+features.append(sw_distances[[i for i in sw_distances.columns if 'dist' in i]].max(axis=1).rename('RI_max_distance_to_sw'))
 #%% write points to csv
 
 # re cut off so that each tc is cut off to the time of peak femur load
@@ -326,59 +341,19 @@ feature_funs = {'Min_': [get_min],
                 'Max_': [get_max]}
 response_features = pd.concat(chdata[channels].chdata.get_features(feature_funs).values(),axis=1,sort=True)
 features.append(response_features)
-features.append(get_ip_angle(chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'end2end').rename('left_ip_angle_end2end'))
-features.append(get_ip_angle(chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'max').rename('left_ip_angle_max'))
-features.append(get_ip_angle(chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'end2end').rename('right_ip_angle_end2end'))
-features.append(get_ip_angle(chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'max').rename('right_ip_angle_max'))
+features.append(get_ip_angle(chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'end2end').rename('LE_ip_angle_end2end'))
+features.append(get_ip_angle(chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'max').rename('LE_ip_angle_max'))
+features.append(get_ip_angle(chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'end2end').rename('RI_ip_angle_end2end'))
+features.append(get_ip_angle(chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], 'max').rename('RI_ip_angle_max'))
 features.append((response_features.loc[table.index, 'Min_10CVEHCG0000ACXD'] - response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('delta_veh_cg'))
 features.append((response_features.loc[table.index, 'Min_10CVEHCG0000ACXD']/response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('ratio_veh_cg'))
+features.append(1/(response_features.loc[table.index, 'Min_10CVEHCG0000ACXD'] - response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('1/delta_veh_cg'))
+features.append(1/(response_features.loc[table.index, 'Min_10CVEHCG0000ACXD']/response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('1/ratio_veh_cg'))
 
 features = pd.concat(features, axis=1)
+
 features = features.loc[:, (features.count())>len(features)//2] # get rid of features with too many na's 
 #features.to_csv(directory + 'features.csv')
-#%% plot femur loads vs. various distances and compute r2
-#angle_method = 'max' # one of 'max', 'end2end'
-#distance_method = 'min' # one of 'min', 'max', 'orig' 
-#x_list = [features['min_distance_from_b'],
-#          features['ratio_veh_cg']]
-#groups = {'grp1': table.index}
-#
-#for factor in x_list:
-#    x = {}
-#    y = {}
-#    for grp in groups:
-#        y[grp] = features.loc[groups[grp], 'left_femur_load']
-#        x[grp] = factor.loc[groups[grp]]
-#
-#    
-##    if len(x['grp'].dropna())<=10:
-##        continue
-##    
-#    spearmanr = rho(x['grp1'], y['grp1'])
-#    pearsonr = corr(x['grp1'], y['grp1'])
-#    rsq = r2(x['grp1'], y['grp1'])
-##    if np.isnan(spearmanr) or np.isnan(pearsonr) or np.isnan(rsq):
-##        break
-##    if rsq<0.2:
-##        continue
-##    if max(spearmanr,pearsonr) < 0.4 and min(spearmanr,pearsonr)>-0.4:
-##        continue
-#    
-#    print(factor.name)
-#    print('rho=' + str(spearmanr) + ', R=' + str(pearsonr) + ', R2=' + str(rsq))
-#    fig = plot_scatter_with_labels(x, y)
-#    fig = set_labels_plotly(fig, {'xlabel': factor.name, 'ylabel': 'Femur Load', 'legend': {}})
-#    plot(fig)
-
-#%%
-#import plotly.graph_objs as go
-#trace = go.Scatter3d(x=features['min_distance_from_b'],
-#                     y=features['ratio_veh_cg'],
-#                     z=features['left_femur_load'],
-#                     text=table.index,
-#                     mode='markers')
-#data = [trace]
-#plot(data)
 
 #%% initiate JSON file
 #to_JSON = {'project_name': 'THOR_Femur',
@@ -386,111 +361,54 @@ features = features.loc[:, (features.count())>len(features)//2] # get rid of fea
 #
 #with open(directory+'params.json','w') as json_file:
 #    json.dump(json_file)
-#%% plot
-#chdata_norm = chdata[['LEFT KNEE CENTERLINE_x','LEFT KNEE CENTERLINE_z', 
-#                      'IP LEFT AT KNEE CENTERLINE_x', 'IP LEFT AT KNEE CENTERLINE_z']]
-#chdata_norm[[i for i in chdata_norm.columns if '_x' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_x' in i]].sub(chdata['a_x'],'index')
-#chdata_norm[[i for i in chdata_norm.columns if '_z' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_z' in i]].sub(chdata['a_z'],'index')
-##chdata_norm[[i for i in chdata_norm.columns if '_x' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_x' in i]].apply(lambda x: x-x['IP LEFT AT KNEE CENTERLINE_x'][0],axis=1)
-##chdata_norm[[i for i in chdata_norm.columns if '_z' in i]] = chdata_norm[[i for i in chdata_norm.columns if '_z' in i]].apply(lambda x: x-x['IP LEFT AT KNEE CENTERLINE_z'][0],axis=1)
-#
-#subset = table.query('KAB==\'NO\' and DUMMY==\'THOR\'')
-#cmap = matplotlib.cm.get_cmap('cool')
-#normalize = matplotlib.colors.Normalize(vmin=features['left_femur_load_plus_x1'].min(),vmax=features['left_femur_load_plus_x1'].max())
-#
-#fig, ax = plt.subplots(figsize=(12,10))
-#for tc in subset.index:
-#    ax.plot(chdata_norm.at[tc,'LEFT KNEE CENTERLINE_x'],
-#             chdata_norm.at[tc,'LEFT KNEE CENTERLINE_z'],
-#             color=cmap(normalize(features.at[tc,'left_femur_load_plus_x1'])))
-#    ax.plot(chdata_norm.at[tc,'IP LEFT AT KNEE CENTERLINE_x'],
-#             chdata_norm.at[tc,'IP LEFT AT KNEE CENTERLINE_z'],
-#             color=cmap(normalize(features.at[tc,'left_femur_load_plus_x1'])),
-#             label=subset.at[tc,'MODEL'])
-#cax, _ = matplotlib.colorbar.make_axes(ax)
-#cbar = matplotlib.colorbar.ColorbarBase(cax,cmap=cmap,norm=normalize)
-#ax.legend()
-#%%
-#for tc in chdata.index:
-#    draw_faro_stream(tc,title=tc)
+#%% Lasso LARS 
+KAB = 'YES'
+femr = 'LE'
 
-#%%
-#import lightgbm as lgb
-#lgb_drop = ['Max_11ILACLE00THFOXA',
-#            'Min_10CVEHCG0000ACXD']
-##
-##lgb_drop2 = []
-##
-##lgb_drop = lgb_drop + lgb_drop2
-#
-#
-#
-#x = features.loc[table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'NO\' and SPEED==48').index].drop(lgb_drop, axis=1)
-#y = x.pop('Min_11FEMRLE00THFOZB')
-#
-## dimensionality reduction of x
-#x = x.loc[:,(x.count()>(len(x)//2))] # remove features with a lot of missing values
-#corr = x.corr().abs()>0.6 # remove columns with high correlation
-#drop_cols = []
-#nfeat = len(corr.columns)
-#for i, col in enumerate(corr.columns):
-#    drop = corr[col].values[i+1:]
-#    colnames = corr.columns.values[i+1:]
-#    drop = colnames[drop]
-#    # figure out which one to drop based on which gives the highest R2 score
-#    for d in drop:
-#        if r2(x[col], y) > r2(x[d], y):
-#            drop_cols.append(d)
-#        else:
-#            drop_cols.append(col)
-##    drop_cols.append(colnames[drop])
-##drop_cols = np.unique(np.concatenate(drop_cols))
-#x = x.drop(list(dict.fromkeys(drop_cols)), axis=1)
-#
-#train_data = lgb.Dataset(x, label=y)
-#
-#param = {'objective': 'regression',
-#         'feature_fraction': 0.8,
-#         'min_data': 1,
-#         'min_data_in_bin': 1}
-#
-#n_rounds = 10
-#importance = pd.DataFrame(index=range(n_rounds), columns=x.columns)
-#
-#for i in range(n_rounds):
-#    model = lgb.train(param, train_data)
-#    importance.loc[i] = model.feature_importance()
-##    lgb.plot_importance(model, figsize=(10,8))
-#print(importance.mean().sort_values())
 
-#%% iteratively add regressors
-from sklearn.linear_model import Lars, LarsCV, LassoLars, LassoLarsCV 
-from sklearn.preprocessing import StandardScaler
-import re
-
-indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'NO\' and SPEED==48').index
-r = re.compile('Left_.*dist$')
+indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and SPEED==48 and KAB==\'{0}\''.format(KAB)).index
+r = re.compile('^{0}.*[^xyz]$'.format(femr))
 cols = [i for i in features.columns if r.search(i) or 'veh' in i.lower()]
-drop = ['Max_10CVEHCG0000ACXD']
-y = features.loc[indices, 'Min_11FEMRLE00THFOZB']
+drop = [i for i in cols if i[4:6]=='11'] + ['Max_10CVEHCG0000ACXD']
+y = features.loc[indices, 'Min_11FEMR{0}00THFOZB'.format(femr)]
 x = features.loc[indices, cols]
 if y.name in x.columns:
     x = x.drop(y.name, axis=1)
 x = x.drop([i for i in drop if i in x.columns], axis=1)
-#x = x.loc[:,~x.isna().any()]
 for col in x:
     x[col] = x[col].replace(np.nan, x[col].mean())
+    
 ss = StandardScaler()
 x = pd.DataFrame(ss.fit_transform(x), columns=x.columns)
-model = LarsCV(max_iter=1, cv=3)
-#model = Lars(max_iter=7)
-model = model.fit(x, y)
-coefs = pd.Series(model.coef_, index=x.columns)
-keep_cols = coefs[coefs.abs()>0]
-print(model.score(x, y))
+corr = x.corr().abs()
+
+for i in range(1, 30):
+#    model = LassoLarsCV(max_iter=i, cv=3)
+    model = LassoLars(alpha=20, max_iter=i)
+    model = model.fit(x, y)
+    score = model.score(x, y)
+    if score==0:
+        print('Model with max_iter={0} gives score of 0. Exiting...'.format(i))
+        break
+    coefs = pd.Series(model.coef_, index=x.columns)
+    keep_cols = coefs[coefs.abs()>0]
+    if len(keep_cols.index)==len(x.columns):
+        print('No features left to fit. Exiting with an R2 score of {0}'.format(score))
+        break
+    drop_cols = corr[keep_cols.index]
+    drop_cols = drop_cols.drop([i for i in keep_cols.index if i in drop_cols.index])
+    drop_cols = drop_cols[drop_cols>0.4].dropna(how='all').index
+    drop_cols = [i for i in drop_cols if i in x.columns]
+    x = x.drop(drop_cols, axis=1)
+    if x.shape[1]==0:
+        print('No features left to fit. Exiting with an R2 score of {0}'.format(score))
+        break
+    print('iteration {0}. Selecting {1} columns. Dropping {2} columns'.format(i, len(keep_cols.index), len(drop_cols)))
+    
+print('Selecting columns {0} with a CV R2 score of {1}.'.format(keep_cols.index, score))
 print(keep_cols)
 
-
+#%% stepwise regression
 def stepwise_regression(x, y, rthresh=0.8, feature_thresh=4, corr_thresh=0.5, drop=[], include_features=[]):
     best_features = []
     best_features.extend(include_features)
@@ -541,14 +459,14 @@ while i <= niter:
     i = i + 1
 
 #%%
-trace = go.Scatter3d(x=features.loc[indices,'Max_11TIBILEMITHACYA'],
-                     y=features.loc[indices,'Max_11ACTBLE00THFOYB'],
-                     z=features.loc[indices,'Min_11FEMRLE00THFOZB'],
+trace = go.Scatter3d(x=features.loc[indices,'Right_max_distance_to_sw'],
+                     y=features.loc[indices,'Min_10CVEHCG0000ACXD'],
+                     z=features.loc[indices,'Min_11FEMRRI00THFOZB'],
                      mode='markers',
                      text=indices)
 data = [trace]
-layout = {'scene': {'xaxis': {'title': 'Tibia'},
-                    'yaxis': {'title': 'Actb'},
+layout = {'scene': {'xaxis': {'title': 'distance'},
+                    'yaxis': {'title': 'veh cg'},
                     'zaxis': {'title': 'Femur'}}}
 
 fig = go.Figure(data=data, layout=layout)
