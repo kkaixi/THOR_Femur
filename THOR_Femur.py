@@ -245,19 +245,24 @@ def get_distances(kps, streams, angles, coords=['x','z'], sgn=-1):
     sgn*coords[0] corresponding to 0 degrees"""
     knee_kps = kps.filter(regex='_x', axis=1).columns.map(lambda x: x.rstrip('_x'))
     ip_streams = streams.filter(regex='_x', axis=1).columns.map(lambda x: x.rstrip('_x'))
-    distances = {kp + ip + str(angle) + dist: pd.Series(index=kps.index) for kp in knee_kps for ip in ip_streams for angle in angles for dist in ['deg_'+coords[0], 'deg_'+coords[1], 'deg_dist']}
+    distances = {kp + ip + str(angle) + dist: pd.Series(index=kps.index) for kp in knee_kps for ip in ip_streams for angle in angles for dist in ['deg_x', 'deg_y', 'deg_z', 'deg_dist']}
     
     for tc in kps.index:
         for kp in knee_kps:
             for ip in ip_streams:
                 ip_cols = [ip + coord for coord in ['_x','_y','_z']]
+                if streams.loc[tc, ip_cols].apply(is_all_nan).any(): continue
                 for angle in angles:
                     ref_x = kps.at[tc, '_'.join((kp, coords[0]))]
                     ref_y = kps.at[tc, '_'.join((kp, coords[1]))]
+                    const_ax = [i for i in ['x','y','z'] if i not in coords][0]
+                    ref_z = kps.at[tc, '_'.join((kp, const_ax))]
                     xkey, ykey = ip_key_point_from_angle(streams.loc[tc, ip_cols], (ref_x, ref_y), angle, coords=coords, sgn=sgn)
-                    dist = np.sqrt((ref_x-xkey)**2+(ref_y-ykey)**2)
+                    zkey = np.nanmean(streams.loc[tc, '_'.join((ip, const_ax))])
+                    dist = np.sqrt((ref_x-xkey)**2+(ref_y-ykey)**2+(ref_z-zkey)**2)
                     distances[kp + ip + str(angle) + 'deg_' + coords[0]][tc] = xkey
                     distances[kp + ip + str(angle) + 'deg_' + coords[1]][tc] = ykey
+                    distances[kp + ip + str(angle) + 'deg_' + const_ax][tc] = zkey
                     distances[kp + ip + str(angle) + 'deg_dist'][tc] = dist
     distances = pd.DataFrame(distances)
     return distances
