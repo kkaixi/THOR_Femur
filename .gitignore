@@ -4,3 +4,4 @@ temp-plot.html
 *.ini
 temp-plot.html
 *.html
+__pycache__/THOR_Femur_helper.cpython-37.pyc
