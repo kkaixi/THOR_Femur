@@ -367,15 +367,15 @@ features = features.loc[:, (features.count())>len(features)//2] # get rid of fea
 #with open(directory+'params.json','w') as json_file:
 #    json.dump(json_file)
 #%% Lasso LARS 
-KAB = 'YES'
-femr = 'LE'
+KAB = 'NO'
+femr = 'RI'
 
 
 indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and SPEED==48 and KAB==\'{0}\''.format(KAB)).index
 r = re.compile('^{0}.*[^xyz]$'.format(femr))
 cols = [i for i in features.columns if r.search(i) or 'veh' in i.lower()]
 drop = [i for i in cols if i[4:6]=='11'] + ['Max_10CVEHCG0000ACXD']
-y = features.loc[indices, 'Min_11FEMR{0}00THFOZB'.format(femr)]
+y = features.loc[indices, 'Min_11FEMR{0}00THFOZB'.format(femr)].abs()
 x = features.loc[indices, cols]
 if y.name in x.columns:
     x = x.drop(y.name, axis=1)
@@ -413,65 +413,15 @@ for i in range(1, 30):
 print('Selecting columns {0} with a CV R2 score of {1}.'.format(keep_cols.index, score))
 print(keep_cols)
 
-#%% stepwise regression
-def stepwise_regression(x, y, rthresh=0.8, feature_thresh=4, corr_thresh=0.5, drop=[], include_features=[]):
-    best_features = []
-    best_features.extend(include_features)
-    rsq = 0
-    feature_list = x.columns.drop([i for i in drop if i in x.columns])
-    feature_list = feature_list.drop([i for i in best_features if i in feature_list])
-    corr = x.corr().abs()>corr_thresh
-    
-    while rsq<rthresh and len(best_features)<=feature_thresh and len(feature_list)>0:
-        lr = LinearRegression()
-        rsq_list = pd.Series(index=feature_list)
-        for col in feature_list:
-            if x[col].count() <= 4:
-                feature_list = feature_list.drop(col)
-                continue
-            xin = x[[col] + best_features]
-            i = np.logical_and(~(xin.isna().any(axis=1)).values.flatten(), ~y.isna().values)
-            lr = lr.fit(xin[i], y[i])
-            rsq_list[col] = lr.score(xin[i], y[i])
-        if len(rsq_list)==0 or rsq_list.isna().all(): break
-        feature_add = rsq_list.idxmax()
-        rsq = rsq_list[feature_add]
-        best_features.append(feature_add)
-        feature_list = feature_list.drop(feature_add)
-        feature_list = feature_list.drop([i for i in corr[feature_add][corr[feature_add]].index if i in feature_list])
-        print('adding feature {0}. updated rsq {1}'.format(feature_add, rsq))
-    return best_features, rsq
-    
-    
-pct_selection = 0.9
-niter = 10
-indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and KAB==\'NO\' and SPEED==48').index
-y = features.loc[indices, 'Left_aC5deg_dist']
-x = features.loc[indices].drop(y.name, axis=1)
-drop = [i for i in features.columns if i[4]!='1']
-drop.extend(['Max_10CVEHCG0000ACXD'])
-
-best_features = []
-subsets = []
-i = 0
-while i <= niter:
-    print(i)
-    sel = np.random.choice(indices, int(len(indices)*pct_selection), replace=False).tolist()
-    if sel in subsets:
-        continue
-    best_features.append(stepwise_regression(x.loc[sel], y.loc[sel], drop=drop))
-    subsets.append(sel)
-    i = i + 1
-
 #%%
-trace = go.Scatter3d(x=features.loc[indices,'Right_max_distance_to_sw'],
-                     y=features.loc[indices,'Min_10CVEHCG0000ACXD'],
-                     z=features.loc[indices,'Min_11FEMRRI00THFOZB'],
+trace = go.Scatter3d(x=features.loc[indices,'RI_gIP RIGHT KNEE CENTERLINE15deg_dist'],
+                     y=features.loc[indices,'RI_max_distance_from_d'],
+                     z=features.loc[indices,'Min_11FEMRLE00THFOZB'].abs(),
                      mode='markers',
                      text=indices)
 data = [trace]
-layout = {'scene': {'xaxis': {'title': 'distance'},
-                    'yaxis': {'title': 'veh cg'},
+layout = {'scene': {'xaxis': {'title': 'RI_gIP RIGHT KNEE CENTERLINE15deg_dist'},
+                    'yaxis': {'title': 'RI_max_distance_from_d'},
                     'zaxis': {'title': 'Femur'}}}
 
 fig = go.Figure(data=data, layout=layout)
