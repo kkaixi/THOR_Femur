@@ -291,6 +291,7 @@ features.append(kp_coords.rename(lambda x: 'LE_' + x, axis=1))
 
 distances = get_distances(kp_coords, pd.concat((stream, chdata[['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]]), axis=1), angles)
 features.append(distances.rename(lambda x: 'LE_' + x, axis=1))
+features.append(chdata['IP LEFT AT KNEE CENTERLINE_x'].apply(lambda x: max(x)-min(x)).rename('LE_max_ip_delta_x'))
 
 for kp in kp_legend:
     features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i]].min(axis=1).rename('LE_min_distance_from_{0}'.format(kp)))
@@ -332,6 +333,8 @@ for ip in list(ip_legend) + ['IP RIGHT KNEE CENTERLINE']:
     features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].max(axis=1).rename('RI_max_distance_to_{0}'.format(ip)))
 features.append(sw_distances[[i for i in sw_distances.columns if 'dist' in i]].min(axis=1).rename('RI_min_distance_to_sw'))
 features.append(sw_distances[[i for i in sw_distances.columns if 'dist' in i]].max(axis=1).rename('RI_max_distance_to_sw'))
+
+features.append(chdata['IP RIGHT KNEE CENTERLINE_x'].apply(lambda x: max(x)-min(x)).rename('RI_max_ip_delta_x'))
 #%% write points to csv
 
 # re cut off so that each tc is cut off to the time of peak femur load
@@ -357,7 +360,14 @@ features.append(1/(response_features.loc[table.index, 'Min_10CVEHCG0000ACXD']/re
 
 features = pd.concat(features, axis=1)
 
-features = features.loc[:, (features.count())>len(features)//2] # get rid of features with too many na's 
+grouped = table.groupby('KAB')
+for grp in grouped:
+    subgrp = features.loc[grp[1].index]
+    subgrp = subgrp.loc[:, (subgrp.count())>len(subgrp)//2]
+    features.loc[subgrp.index, subgrp.columns] = subgrp
+
+
+#features = features.loc[:, (features.count())>len(features)//2] # get rid of features with too many na's 
 #features.to_csv(directory + 'features.csv')
 
 #%% initiate JSON file
@@ -366,8 +376,9 @@ features = features.loc[:, (features.count())>len(features)//2] # get rid of fea
 #
 #with open(directory+'params.json','w') as json_file:
 #    json.dump(json_file)
+
 #%% Lasso LARS 
-KAB = 'NO'
+KAB = 'YES'
 femr = 'RI'
 
 
@@ -414,15 +425,20 @@ print('Selecting columns {0} with a CV R2 score of {1}.'.format(keep_cols.index,
 print(keep_cols)
 
 #%%
-trace = go.Scatter3d(x=features.loc[indices,'RI_gIP RIGHT KNEE CENTERLINE15deg_dist'],
-                     y=features.loc[indices,'RI_max_distance_from_d'],
+trace = go.Scatter3d(x=features.loc[indices,'RI_gIP RIGHT KNEE CENTERLINE5deg_dist'],
+                     y=features.loc[indices,'Min_10CVEHCG0000ACXD'],
                      z=features.loc[indices,'Min_11FEMRLE00THFOZB'].abs(),
                      mode='markers',
                      text=indices)
 data = [trace]
-layout = {'scene': {'xaxis': {'title': 'RI_gIP RIGHT KNEE CENTERLINE15deg_dist'},
-                    'yaxis': {'title': 'RI_max_distance_from_d'},
+layout = {'scene': {'xaxis': {'title': 'RI_gIP RIGHT KNEE CENTERLINE5deg_dist'},
+                    'yaxis': {'title': 'Min_10CVEHCG0000ACXD'},
                     'zaxis': {'title': 'Femur'}}}
 
 fig = go.Figure(data=data, layout=layout)
 plot(fig)
+
+#%% compare femur loads based on whether the left knee is covered or not as according to post-test photos
+import seaborn as sns
+subset = pd.concat((table.query('KAB==\'YES\''),features['Min_11FEMRLE00THFOZB'].abs()), axis=1)
+sns.barplot(x='POST_LEFT', y='Min_11FEMRLE00THFOZB', data=subset)
