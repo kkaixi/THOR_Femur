@@ -14,11 +14,16 @@ from THOR_Femur_helper import *
 from PMG.COM.helper import *
 from PMG.COM.get_props import *
 from PMG.COM.plotfuns import *
+from PMG.COM.linear_model import *
 from plotly.offline import plot
 import plotly.graph_objs as go
 from sklearn.linear_model import Lars, LarsCV, LassoLars, LassoLarsCV 
 from sklearn.preprocessing import StandardScaler
 import re
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+
 
 directory = 'P:\\Data Analysis\\Projects\\THOR Femur\\'
 streams =  ('LEFT KNEE CENTERLINE',
@@ -31,6 +36,7 @@ streams =  ('LEFT KNEE CENTERLINE',
 knee_cols = ['LEFT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
 ip_cols = ['IP LEFT AT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]
 channels = ['10CVEHCG0000ACXD','11SEBE0000B6FO0D',
+            '11NECKLO00THFOXA','11NECKLO00THFOYA',
             '11LUSP0000THFOXA','11LUSP0000THFOYA','11LUSP0000THFOZA',
             '11LUSP0000THMOXA','11LUSP0000THMOYA',
             '11ILACLE00THFOXA','11ILACRI00THFOXA'
@@ -182,12 +188,14 @@ def draw_ip_lines(upper, lower, center_ref, ip_deltas):
     ip_streams = {}
     
     for i in ip_deltas:
+        print(i)
         ip_ind = next(ind_iter)
         legend[ip_ind] = 'on_ip_' + str(i) + 'mm_from_center'
         colnames = [ip_ind + coord for coord in ['_x','_y','_z']]        
         ip_streams.update({col: pd.Series(index=center_ref.index).astype('object') for col in colnames})
         
         for tc in center_ref.index:
+            print(tc)
             p = pd.DataFrame(columns=['x','y','z'], index=['p1','p2'])
             
             p.loc['p1',['x','y']] = ip_points_from_centre(upper.loc[tc, [i for i in upper.columns if '_x' in i or '_y' in i]],
@@ -312,9 +320,11 @@ kp_coords, kp_legend = get_knee_kps(chdata[[i.replace('LEFT', 'RIGHT') for i in 
 features.append(kp_coords.rename(lambda x: 'RI_' + x, axis=1))
 
 distances = get_distances(kp_coords, chdata[['IP RIGHT KNEE CENTERLINE_' + ax for ax in ['x','y','z']]], angles)
+distances = distances.dropna(axis=1, how='all')
 features.append(distances.rename(lambda x: 'RI_' + x, axis=1))
 
 sw_distances = get_distances(kp_coords, chdata[['RIGHT STEERING COLUMN_' + ax for ax in ['x','y','z']]], angles, coords=['y','z'], sgn=-1)
+sw_distances = sw_distances.dropna(axis=1, how='all')
 features.append(sw_distances.rename(lambda x: 'RI_' + x, axis=1))
 
 for kp in kp_legend:
@@ -325,10 +335,10 @@ for kp in kp_legend:
         features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].min(axis=1).rename('RI_min_distance_from_{0}_at_{1}deg'.format(kp, angle)))
         features.append(distances[[i for i in distances.columns if kp in i and str(angle) + 'deg_dist' in i]].max(axis=1).rename('RI_max_distance_from_{0}_at_{1}deg'.format(kp, angle)))
     # get min, max, mean, median distance holding IP constant
-    for ip in list(ip_legend) + ['IP RIGHT KNEE CENTERLINE']:
+    for ip in ['IP RIGHT KNEE CENTERLINE']:
         features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].min(axis=1).rename('RI_min_distance_from_{0}_to_{1}'.format(kp, ip)))
         features.append(distances[[i for i in distances.columns if kp in i and 'dist' in i and ip in i]].max(axis=1).rename('RI_max_distance_from_{0}_to_{1}'.format(kp, ip)))
-for ip in list(ip_legend) + ['IP RIGHT KNEE CENTERLINE']:
+for ip in ['IP RIGHT KNEE CENTERLINE']:
     features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].min(axis=1).rename('RI_min_distance_to_{0}'.format(ip)))
     features.append(distances[[i for i in distances.columns if ip in i and 'dist' in i]].max(axis=1).rename('RI_max_distance_to_{0}'.format(ip)))
 features.append(sw_distances[[i for i in sw_distances.columns if 'dist' in i]].min(axis=1).rename('RI_min_distance_to_sw'))
@@ -360,6 +370,7 @@ features.append(1/(response_features.loc[table.index, 'Min_10CVEHCG0000ACXD']/re
 
 features = pd.concat(features, axis=1)
 
+
 grouped = table.groupby('KAB')
 for grp in grouped:
     subgrp = features.loc[grp[1].index]
@@ -377,68 +388,191 @@ for grp in grouped:
 #with open(directory+'params.json','w') as json_file:
 #    json.dump(json_file)
 
-#%% Lasso LARS 
-KAB = 'YES'
-femr = 'RI'
 
-
-indices = table.drop('TC18-212').query('DUMMY==\'THOR\' and SPEED==48 and KAB==\'{0}\''.format(KAB)).index
-r = re.compile('^{0}.*[^xyz]$'.format(femr))
-cols = [i for i in features.columns if r.search(i) or 'veh' in i.lower()]
-drop = [i for i in cols if i[4:6]=='11'] + ['Max_10CVEHCG0000ACXD']
-y = features.loc[indices, 'Min_11FEMR{0}00THFOZB'.format(femr)].abs()
-x = features.loc[indices, cols]
-if y.name in x.columns:
-    x = x.drop(y.name, axis=1)
-x = x.drop([i for i in drop if i in x.columns], axis=1)
-for col in x:
-    x[col] = x[col].replace(np.nan, x[col].mean())
-    
-ss = StandardScaler()
-x = pd.DataFrame(ss.fit_transform(x), columns=x.columns)
-corr = x.corr().abs()
-
-for i in range(1, 30):
-#    model = LassoLarsCV(max_iter=i, cv=3)
-    model = LassoLars(alpha=20, max_iter=i)
-    model = model.fit(x, y)
-    score = model.score(x, y)
-    if score==0:
-        print('Model with max_iter={0} gives score of 0. Exiting...'.format(i))
-        break
-    coefs = pd.Series(model.coef_, index=x.columns)
-    keep_cols = coefs[coefs.abs()>0]
-    if len(keep_cols.index)==len(x.columns):
-        print('No features left to fit. Exiting with an R2 score of {0}'.format(score))
-        break
-    drop_cols = corr[keep_cols.index]
-    drop_cols = drop_cols.drop([i for i in keep_cols.index if i in drop_cols.index])
-    drop_cols = drop_cols[drop_cols>0.4].dropna(how='all').index
-    drop_cols = [i for i in drop_cols if i in x.columns]
-    x = x.drop(drop_cols, axis=1)
-    if x.shape[1]==0:
-        print('No features left to fit. Exiting with an R2 score of {0}'.format(score))
-        break
-    print('iteration {0}. Selecting {1} columns. Dropping {2} columns'.format(i, len(keep_cols.index), len(drop_cols)))
-    
-print('Selecting columns {0} with a CV R2 score of {1}.'.format(keep_cols.index, score))
-print(keep_cols)
+#%% plot stuff
+plot_channels = ['Max_11TIBIRIUPTHFOYB']
+subset = table
+for ch in plot_channels:
+    data = pd.concat((subset, features[ch]), axis=1)
+    ax = sns.barplot(x='RIGHT_SW_CONTACT', y=ch, data=data)
 
 #%%
-trace = go.Scatter3d(x=features.loc[indices,'RI_gIP RIGHT KNEE CENTERLINE5deg_dist'],
-                     y=features.loc[indices,'Min_10CVEHCG0000ACXD'],
-                     z=features.loc[indices,'Min_11FEMRLE00THFOZB'].abs(),
+chx_list = ['Max_11TIBIRIUPTHFOYB']
+chy_list = ['Min_11FEMRRI00THFOZB', 
+            'RI_min_distance_to_sw']
+
+subset = table.query('KAB==\'YES\'')
+for chy in chy_list:
+    for chx in chx_list:
+        x = features.loc[subset.index, chx]
+        y = features.loc[subset.index, chy]
+        
+        fig, ax = plt.subplots()
+        ax.plot(x, y, '.')
+        ax.set_xlabel(chx)
+        ax.set_ylabel(chy)
+        print(x.corr(y))
+
+#%% are there any dummy responses that are correlated to femur load but independent of vehicle features?
+def get_candidate_dummy_variables(KAB, femr):
+    subset = table.query('DUMMY==\'THOR\' and SPEED==48 and KAB==\'{0}\''.format(KAB))
+    subset_features = features.loc[subset.index]
+    subset_features = subset_features.loc[:, (subset_features.count())>len(subset_features)//2]    
+    for col in subset_features:
+        subset_features[col] = subset_features[col].replace(np.nan, subset_features[col].mean())
+    
+    dummy_features = [i for i in subset_features.columns if i[4:6]=='11' and (i[10:12]==femr or i[10:12]=='00')]
+    coord_features = [i for i in subset_features.columns if i.endswith(('_x', '_y', '_z'))]
+    veh_features = subset_features.filter(like=femr).columns
+    veh_features = veh_features.drop([i for i in dummy_features if i in veh_features])
+    veh_features = veh_features.drop([i for i in coord_features if i in veh_features])
+    
+    
+    corr = subset_features.corr().abs()
+    corr_femr = corr.loc[dummy_features, 'Min_11FEMR{}00THFOZB'.format(femr)] > 0.3
+    corr_femr = corr_femr.drop('Min_11FEMR{}00THFOZB'.format(femr))
+    indep_veh = corr.loc[dummy_features, veh_features] <= 0.5
+    indep_veh = indep_veh.drop('Min_11FEMR{}00THFOZB'.format(femr))
+    
+    candidates = corr_femr.index[(corr_femr & indep_veh.all(axis=1))]
+    #        print(KAB, femr)
+    #        print(candidates)
+    corr_femr = corr_femr.loc[candidates]
+    indep_veh = indep_veh.loc[candidates]
+    return list(candidates)
+
+#%% regression functions
+def plot_independent_variables(features, indices, y, keep_cols, KAB, femr):
+    fig, axs = get_axes(len(keep_cols))
+    for ax, col in zip(axs.flatten(), keep_cols):
+        ax.plot(features.loc[indices, col], features.loc[indices, y.name], '.')
+        ax = set_labels(ax, {'xlabel': col, 'ylabel': y.name})
+    fig.suptitle('{0} femur ({1} KAB)'.format(femr.lower(), KAB.lower()))
+
+def get_sample(KAB, femr):
+    candidate_dummy_variables = get_candidate_dummy_variables(KAB, femr)
+#    candidate_dummy_variables = []
+    indices = table.drop(['TC18-212']).query('DUMMY==\'THOR\' and SPEED==48 and KAB==\'{0}\''.format(KAB)).index
+    
+    r = re.compile('^{0}.*[^xyz]$'.format(femr))
+    cols = [i for i in features.columns if r.search(i) or 'veh' in i.lower()] + candidate_dummy_variables
+    drop = [i for i in cols if i[4:6]=='11' and i not in candidate_dummy_variables] + ['Max_10CVEHCG0000ACXD']
+
+    y = features.loc[indices, 'Min_11FEMR{0}00THFOZB'.format(femr)].abs()
+    x = features.loc[indices, cols]
+    x = x.loc[:, (x.count())>len(x)//2]    
+    
+    # preprocessing
+    if 'TC18-036' in x.index:
+        x.at['TC18-036', '1/delta_veh_cg'] = np.nan
+        
+    if y.name in x.columns:
+        x = x.drop(y.name, axis=1)
+    x = x.drop([i for i in drop if i in x.columns], axis=1)
+    for col in x:
+        x[col] = x[col].replace(np.nan, x[col].mean())
+        
+    ss = StandardScaler()
+    x = pd.DataFrame(ss.fit_transform(x), columns=x.columns, index=x.index)
+    return indices, x, y
+
+def get_predictors(x, y):
+    corr = x.corr().abs()
+    
+    scores = [0]
+    adjusted_scores = [0]
+    keep_cols = []
+    
+    for i in range(1, 30):
+        # get candidate columns
+        model = LassoLars(alpha=20, max_iter=i)
+        model = model.fit(x, y)
+        coefs = pd.Series(model.coef_, index=x.columns)
+        candidate_cols = coefs[coefs.abs()>0].index
+        
+        # evaluate scores
+        mlr, labels = get_linear_regression(x[candidate_cols], y)
+        score = mlr.rsquared
+        adjusted_score = mlr.rsquared_adj
+        
+        # if R2=0 or the adjusted R2 does not improve significantly, exit. Otherwise, continue.
+        if score==0:
+            print('Model with max_iter={0} gives score of 0. Exiting...'.format(i))
+            break
+        elif adjusted_score-adjusted_scores[-1] < 0.03:
+            print('No significant improvement in adjusted R2. Exiting...')
+            print('R2: ', scores)
+            print('Adjusted R2: ', adjusted_scores)
+            break
+        else:
+            scores.append(score)
+            adjusted_scores.append(adjusted_score)
+            keep_cols = candidate_cols
+            
+        # if no more columns to fit, there is no need to continue the loop
+        if len(keep_cols)==len(x.columns):
+            print('No features left to fit. Exiting with an R2 score of {0}'.format(score))
+            print('R2: ', scores)
+            print('Adjusted R2: ', adjusted_scores)
+            break
+        
+        drop_cols = corr[keep_cols]
+        drop_cols = drop_cols.drop([i for i in keep_cols if i in drop_cols.index])
+        drop_cols = drop_cols[drop_cols>0.4].dropna(how='all').index
+        drop_cols = [i for i in drop_cols if i in x.columns]
+        x = x.drop(drop_cols, axis=1)
+    
+        if x.shape[1]==0:
+            print('No features left to fit. Exiting with an R2 score of {0}'.format(score))
+            print('R2: ', scores)
+            print('Adjusted R2: ', adjusted_scores)
+            break
+        print('iteration {0}. Selecting {1} columns. Dropping {2} columns'.format(i, len(keep_cols), len(drop_cols)))
+        
+    print('Selecting columns {0} with a R2 score of {1}.'.format(keep_cols, score))
+    return keep_cols, scores, adjusted_scores
+
+
+def get_linear_regression(x, y):
+    label_iterator = iter(ascii_lowercase)
+    data = pd.concat((x, y), axis=1)
+    labels = {col: next(label_iterator) for col in data.columns}
+    data = data.rename(labels, axis=1)
+    mlr = smf.ols('{0} ~ {1}'.format(labels[y.name], '+'.join(data.columns.drop(labels[y.name]))), data=data).fit()
+    return mlr, labels
+
+#%%
+for KAB in ['YES','NO']:
+    for femr in ['LE','RI']:
+        indices, x, y = get_sample(KAB, femr)
+        keep_cols, scores, adjusted_scores = get_predictors(x, y)
+        
+        plot_independent_variables(features, indices, y, keep_cols, KAB, femr)
+
+#%%
+KAB = 'NO'
+cols = ['LE_max_distance_from_a',
+        'RI_max_distance_from_d_at_0deg',
+        'RI_max_distance_from_a',
+        'LE_max_distance_from_d_at_0deg']
+for femr in ['LE','RI']:
+    indices, x, y = get_sample(KAB, femr)
+    plot_independent_variables(features, indices, y, cols , KAB, femr)
+#%%
+KAB = 'NO'
+femr = 'RI'
+indices, x, y = get_sample(KAB, femr)
+xplot = x['RI_max_distance_from_d_at_0deg']
+yplot = x['Min_11LUSP0000THFOZA']
+trace = go.Scatter3d(x=xplot,
+                     y=yplot,
+                     z=y,
                      mode='markers',
                      text=indices)
 data = [trace]
-layout = {'scene': {'xaxis': {'title': 'RI_gIP RIGHT KNEE CENTERLINE5deg_dist'},
-                    'yaxis': {'title': 'Min_10CVEHCG0000ACXD'},
+layout = {'scene': {'xaxis': {'title': xplot.name},
+                    'yaxis': {'title': yplot.name},
                     'zaxis': {'title': 'Femur'}}}
 
 fig = go.Figure(data=data, layout=layout)
 plot(fig)
-
-#%% compare femur loads based on whether the left knee is covered or not as according to post-test photos
-import seaborn as sns
-subset = pd.concat((table.query('KAB==\'YES\''),features['Min_11FEMRLE00THFOZB'].abs()), axis=1)
-sns.barplot(x='POST_LEFT', y='Min_11FEMRLE00THFOZB', data=subset)
