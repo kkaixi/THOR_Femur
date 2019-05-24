@@ -188,14 +188,12 @@ def draw_ip_lines(upper, lower, center_ref, ip_deltas):
     ip_streams = {}
     
     for i in ip_deltas:
-        print(i)
         ip_ind = next(ind_iter)
         legend[ip_ind] = 'on_ip_' + str(i) + 'mm_from_center'
         colnames = [ip_ind + coord for coord in ['_x','_y','_z']]        
         ip_streams.update({col: pd.Series(index=center_ref.index).astype('object') for col in colnames})
         
         for tc in center_ref.index:
-            print(tc)
             p = pd.DataFrame(columns=['x','y','z'], index=['p1','p2'])
             
             p.loc['p1',['x','y']] = ip_points_from_centre(upper.loc[tc, [i for i in upper.columns if '_x' in i or '_y' in i]],
@@ -367,8 +365,15 @@ features.append((response_features.loc[table.index, 'Min_10CVEHCG0000ACXD'] - re
 features.append((response_features.loc[table.index, 'Min_10CVEHCG0000ACXD']/response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('ratio_veh_cg'))
 features.append(1/(response_features.loc[table.index, 'Min_10CVEHCG0000ACXD'] - response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('1/delta_veh_cg'))
 features.append(1/(response_features.loc[table.index, 'Min_10CVEHCG0000ACXD']/response_features.loc[table['PAIR'].values,'Min_10CVEHCG0000ACXD'].values).rename('1/ratio_veh_cg'))
+features.append(table.select_dtypes(np.float64))
 
 features = pd.concat(features, axis=1)
+
+features['RI_LAP_BELT_DX'] = table['VEH_LAP_BELT_X'] - table['RI_HP_X']
+features['RI_LAP_BELT_DZ'] = table['VEH_LAP_BELT_Z'] - table['RI_HP_Z']
+features['RI_LAP_BELT_DY'] = table['VEH_LAP_BELT_Y'] - table['RI_HP_Z']
+features['RI_LAP_BELT_D'] = np.sqrt(features['RI_LAP_BELT_DX']**2 + features['RI_LAP_BELT_DZ']**2 + features['RI_LAP_BELT_DY']**2)
+                                
 
 
 grouped = table.groupby('KAB')
@@ -390,28 +395,28 @@ for grp in grouped:
 
 
 #%% plot stuff
-plot_channels = ['Max_11TIBIRIUPTHFOYB']
-subset = table
-for ch in plot_channels:
-    data = pd.concat((subset, features[ch]), axis=1)
-    ax = sns.barplot(x='RIGHT_SW_CONTACT', y=ch, data=data)
+#plot_channels = ['Max_11TIBIRIUPTHFOYB']
+#subset = table
+#for ch in plot_channels:
+#    data = pd.concat((subset, features[ch]), axis=1)
+#    ax = sns.barplot(x='RIGHT_SW_CONTACT', y=ch, data=data)
 
 #%%
-chx_list = ['Max_11TIBIRIUPTHFOYB']
-chy_list = ['Min_11FEMRRI00THFOZB', 
-            'RI_min_distance_to_sw']
-
-subset = table.query('KAB==\'YES\'')
-for chy in chy_list:
-    for chx in chx_list:
-        x = features.loc[subset.index, chx]
-        y = features.loc[subset.index, chy]
-        
-        fig, ax = plt.subplots()
-        ax.plot(x, y, '.')
-        ax.set_xlabel(chx)
-        ax.set_ylabel(chy)
-        print(x.corr(y))
+#chx_list = ['Max_11TIBIRIUPTHFOYB']
+#chy_list = ['Min_11FEMRRI00THFOZB', 
+#            'RI_min_distance_to_sw']
+#
+#subset = table.query('KAB==\'YES\'')
+#for chy in chy_list:
+#    for chx in chx_list:
+#        x = features.loc[subset.index, chx]
+#        y = features.loc[subset.index, chy]
+#        
+#        fig, ax = plt.subplots()
+#        ax.plot(x, y, '.')
+#        ax.set_xlabel(chx)
+#        ax.set_ylabel(chy)
+#        print(x.corr(y))
 
 #%% are there any dummy responses that are correlated to femur load but independent of vehicle features?
 def get_candidate_dummy_variables(KAB, femr):
@@ -551,19 +556,16 @@ for KAB in ['YES','NO']:
 
 #%%
 KAB = 'NO'
-cols = ['LE_max_distance_from_a',
-        'RI_max_distance_from_d_at_0deg',
-        'RI_max_distance_from_a',
-        'LE_max_distance_from_d_at_0deg']
+cols = ['onset_to_sebe_max','onset_to_sebe_max']
 for femr in ['LE','RI']:
     indices, x, y = get_sample(KAB, femr)
     plot_independent_variables(features, indices, y, cols , KAB, femr)
-#%%
-KAB = 'NO'
+#%% 3D plot
+KAB = 'YES'
 femr = 'RI'
 indices, x, y = get_sample(KAB, femr)
-xplot = x['RI_max_distance_from_d_at_0deg']
-yplot = x['Min_11LUSP0000THFOZA']
+xplot = x['RI_gIP RIGHT KNEE CENTERLINE5deg_dist']
+yplot = x['Min_11FEMRRI00THMOYB']
 trace = go.Scatter3d(x=xplot,
                      y=yplot,
                      z=y,
