@@ -20,7 +20,7 @@ import plotly.graph_objs as go
 from sklearn.linear_model import Lars, LarsCV, LassoLars, LassoLarsCV 
 from sklearn.preprocessing import StandardScaler
 import re
-import statsmodels.api as sm
+from statsmodels.regression.linear_model import OLS
 import statsmodels.formula.api as smf
 
 
@@ -470,89 +470,55 @@ def get_sample(KAB, femr):
     # preprocessing
     if 'TC18-036' in x.index:
         x.at['TC18-036', '1/delta_veh_cg'] = np.nan
-        
-    if y.name in x.columns:
-        x = x.drop(y.name, axis=1)
+    
     x = x.drop([i for i in drop if i in x.columns], axis=1)
-    for col in x:
-        x[col] = x[col].replace(np.nan, x[col].mean())
-        
-    ss = StandardScaler()
-    x = pd.DataFrame(ss.fit_transform(x), columns=x.columns, index=x.index)
+    
+    x, y = preprocess_data(x, y, treat_nan='meanx', scale=True)
     return indices, x, y
 
-def get_predictors(x, y):
-    corr = x.corr().abs()
-    
-    scores = [0]
-    adjusted_scores = [0]
-    keep_cols = []
-    
-    for i in range(1, 30):
-        # get candidate columns
-        model = LassoLars(alpha=20, max_iter=i)
-        model = model.fit(x, y)
-        coefs = pd.Series(model.coef_, index=x.columns)
-        candidate_cols = coefs[coefs.abs()>0].index
-        
-        # evaluate scores
-        mlr, labels = get_linear_regression(x[candidate_cols], y)
-        score = mlr.rsquared
-        adjusted_score = mlr.rsquared_adj
-        
-        # if R2=0 or the adjusted R2 does not improve significantly, exit. Otherwise, continue.
-        if score==0:
-            print('Model with max_iter={0} gives score of 0. Exiting...'.format(i))
-            break
-        elif adjusted_score-adjusted_scores[-1] < 0.03:
-            print('No significant improvement in adjusted R2. Exiting...')
-            print('R2: ', scores)
-            print('Adjusted R2: ', adjusted_scores)
-            break
-        else:
-            scores.append(score)
-            adjusted_scores.append(adjusted_score)
-            keep_cols = candidate_cols
-            
-        # if no more columns to fit, there is no need to continue the loop
-        if len(keep_cols)==len(x.columns):
-            print('No features left to fit. Exiting with an R2 score of {0}'.format(score))
-            print('R2: ', scores)
-            print('Adjusted R2: ', adjusted_scores)
-            break
-        
-        drop_cols = corr[keep_cols]
-        drop_cols = drop_cols.drop([i for i in keep_cols if i in drop_cols.index])
-        drop_cols = drop_cols[drop_cols>0.4].dropna(how='all').index
-        drop_cols = [i for i in drop_cols if i in x.columns]
-        x = x.drop(drop_cols, axis=1)
-    
-        if x.shape[1]==0:
-            print('No features left to fit. Exiting with an R2 score of {0}'.format(score))
-            print('R2: ', scores)
-            print('Adjusted R2: ', adjusted_scores)
-            break
-        print('iteration {0}. Selecting {1} columns. Dropping {2} columns'.format(i, len(keep_cols), len(drop_cols)))
-        
-    print('Selecting columns {0} with a R2 score of {1}.'.format(keep_cols, score))
-    return keep_cols, scores, adjusted_scores
 
 
-def get_linear_regression(x, y):
-    label_iterator = iter(ascii_lowercase)
-    data = pd.concat((x, y), axis=1)
-    labels = {col: next(label_iterator) for col in data.columns}
-    data = data.rename(labels, axis=1)
-    mlr = smf.ols('{0} ~ {1}'.format(labels[y.name], '+'.join(data.columns.drop(labels[y.name]))), data=data).fit()
-    return mlr, labels
+class OLSWrapper(object):
+    def __init__(self, x, y):
+        label_iterator = iter(ascii_lowercase)
+        data = pd.concat((x, y), axis=1)
+        labels = {col: next(label_iterator) for col in data.columns}
+        data = data.rename(labels, axis=1)
+        self.model = smf.ols('{0} ~ {1}'.format(labels[y.name], '+'.join(data.columns.drop(labels[y.name]))), data=data)
+    def fit(self, x, y):
+        self.rr = self.model.fit()
+        return self
+    def score(self, x, y):
+        return self.rr.rsquared_adj
 
 #%%
 for KAB in ['YES','NO']:
     for femr in ['LE','RI']:
         indices, x, y = get_sample(KAB, femr)
-        keep_cols, scores, adjusted_scores = get_predictors(x, y)
+#        keep_cols, scores, adjusted_scores = get_predictors(x, y.squeeze())
+        score = 0
+        predictors = set()
         
-        plot_independent_variables(features, indices, y, keep_cols, KAB, femr)
+        for i in range(1, 30):
+            model = LassoLars(alpha=20, max_iter=i)
+            vs = VariableSelector(x, y, model, predictors=predictors)
+            vs.score = score
+            candidate_cols = vs._find_candidate_columns(model)
+            
+            eval_model = OLSWrapper(x[list(candidate_cols)], y.squeeze())
+            vs.eval_model = eval_model
+            score = vs._evaluate_model_fit(model, candidate_cols)
+            
+            do_next = vs._maybe_update_predictors(candidate_cols, score)
+            if not do_next:
+                break
+            x = vs._test_x
+            keep_cols = list(vs.predictors)
+        print('Columns:',keep_cols)
+        print('Score:',vs.score)
+        print('\n')
+        
+        plot_independent_variables(features, indices, y.squeeze(), keep_cols, KAB, femr)
 
 #%%
 KAB = 'NO'
