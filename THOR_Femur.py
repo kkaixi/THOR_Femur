@@ -473,7 +473,7 @@ def get_sample(KAB, femr):
     
     x = x.drop([i for i in drop if i in x.columns], axis=1)
     
-    x, y = preprocess_data(x, y, treat_nan='meanx', scale=True)
+    x, y = preprocess_data(x, y, missing_x='mean', scale=True)
     return indices, x, y
 
 
@@ -495,30 +495,12 @@ class OLSWrapper(object):
 for KAB in ['YES','NO']:
     for femr in ['LE','RI']:
         indices, x, y = get_sample(KAB, femr)
-#        keep_cols, scores, adjusted_scores = get_predictors(x, y.squeeze())
-        score = 0
-        predictors = set()
+        model = iter([Lars(n_nonzero_coefs=i) for i in range(1, 10)])
         
-        for i in range(1, 30):
-            model = LassoLars(alpha=20, max_iter=i)
-            vs = VariableSelector(x, y, model, predictors=predictors)
-            vs.score = score
-            candidate_cols = vs._find_candidate_columns(model)
-            
-            eval_model = OLSWrapper(x[list(candidate_cols)], y.squeeze())
-            vs.eval_model = eval_model
-            score = vs._evaluate_model_fit(model, candidate_cols)
-            
-            do_next = vs._maybe_update_predictors(candidate_cols, score)
-            if not do_next:
-                break
-            x = vs._test_x
-            keep_cols = list(vs.predictors)
-        print('Columns:',keep_cols)
-        print('Score:',vs.score)
-        print('\n')
-        
-        plot_independent_variables(features, indices, y.squeeze(), keep_cols, KAB, femr)
+        eval_model = partial(SMRegressionWrapper, model=sm.OLS)
+        vs = VariableSelector(x, y, model, eval_model=eval_model)
+        vs.find_variables()
+        vs.plot_variables()
 
 #%%
 KAB = 'NO'
